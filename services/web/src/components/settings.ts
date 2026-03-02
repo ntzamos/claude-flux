@@ -57,6 +57,14 @@ export const FIELD_GROUPS = [
       { key: "USER_TIMEZONE", label: "Your Timezone", type: "text", placeholder: "America/New_York",  required: false },
     ],
   },
+  {
+    title: "GitHub",
+    description: `Connect a GitHub account so the bot can pull, push, and manage repos on your behalf. Create a Personal Access Token at <a href="https://github.com/settings/tokens" target="_blank" style="color:var(--accent)">github.com/settings/tokens</a> — choose <strong>Classic</strong>, tick <em>repo</em> scope, then paste the token below.`,
+    fields: [
+      { key: "GITHUB_TOKEN", label: "Personal Access Token", type: "password", placeholder: "ghp_...", required: false },
+      { key: "GITHUB_USERNAME", label: "GitHub Username", type: "text", placeholder: "ntzamos", required: false },
+    ],
+  },
 ];
 
 export function renderSettingsForm(
