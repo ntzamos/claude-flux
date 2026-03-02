@@ -308,7 +308,7 @@ export function layout(title: string, content: string, activeTab?: string): stri
 <body>
   <div class="topbar">
     <div class="topbar-dot"></div>
-    <div class="topbar-logo">Claude <span>Relay</span></div>
+    <div class="topbar-logo">Claude <span>Flux</span></div>
   </div>
   ${activeTab ? `<nav class="tabnav">${navLinks}</nav>` : ""}
   <div class="main">
