@@ -312,6 +312,16 @@ const server = Bun.serve({
       return html(await renderDashboard(tab, page, toast));
     }
 
+    // ── Save theme (no relay restart needed) ─────────────────
+    if (pathname === "/api/theme" && req.method === "POST") {
+      const form = await req.formData();
+      const { error } = await upsertSettings(form);
+      if (error) {
+        return redirect(`/dashboard?tab=settings&toast=error&msg=${encodeURIComponent("Theme save failed: " + error)}`);
+      }
+      return redirect(`/dashboard?tab=settings&toast=success&msg=${encodeURIComponent("Theme applied.")}`);
+    }
+
     // ── Save settings → restart relay ────────────────────────
     if (pathname === "/api/settings" && req.method === "POST") {
       const form = await req.formData();

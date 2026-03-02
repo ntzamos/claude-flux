@@ -67,6 +67,116 @@ export const FIELD_GROUPS = [
   },
 ];
 
+function renderThemeSection(current: Record<string, string>): string {
+  const activeTheme = current.THEME || "flux";
+  const activeMode  = current.THEME_MODE || "dark";
+  const activeAccent = current.THEME_ACCENT || "#8b5cf6";
+
+  const presets = [
+    {
+      id: "flux",
+      name: "Flux",
+      desc: "Dark · Green",
+      swatches: ["#090d09", "#0d130d", "#00e676"],
+    },
+    {
+      id: "midnight",
+      name: "Midnight",
+      desc: "Dark · Blue",
+      swatches: ["#08090f", "#0c1018", "#38bdf8"],
+    },
+    {
+      id: "ember",
+      name: "Ember",
+      desc: "Dark · Amber",
+      swatches: ["#0f0a06", "#160d08", "#f59e0b"],
+    },
+    {
+      id: "custom",
+      name: "Custom",
+      desc: "Your colors",
+      swatches: [],
+    },
+  ];
+
+  const cards = presets.map(p => {
+    const isActive = activeTheme === p.id;
+    const swatchHtml = p.swatches.length
+      ? p.swatches.map(c => `<div style="width:18px;height:18px;border-radius:3px;background:${c};border:1px solid rgba(255,255,255,0.08)"></div>`).join("")
+      : `<div style="width:18px;height:18px;border-radius:3px;background:var(--border2)"></div>
+         <div style="width:18px;height:18px;border-radius:3px;background:var(--surface)"></div>
+         <div id="custom-swatch" style="width:18px;height:18px;border-radius:3px;background:${activeAccent}"></div>`;
+    return `
+    <div class="theme-card${isActive ? " active" : ""}" id="tc-${p.id}" onclick="pickTheme('${p.id}')">
+      <div style="display:flex;gap:0.35rem;margin-bottom:0.55rem">${swatchHtml}</div>
+      <div style="font-size:0.78rem;font-weight:700;color:var(--text)">${p.name}</div>
+      <div style="font-size:0.65rem;color:var(--muted);margin-top:0.1rem">${p.desc}</div>
+    </div>`;
+  }).join("");
+
+  return `
+  <div class="card" style="margin-bottom:1rem">
+    <div class="section-title">Appearance</div>
+    <div class="section-desc">Choose a theme. Changes apply instantly without restarting the bot.</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:1rem">
+      ${cards}
+    </div>
+
+    <!-- Custom builder — shown only when "Custom" is selected -->
+    <div id="custom-builder" style="display:${activeTheme === "custom" ? "block" : "none"};background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:0.85rem;margin-bottom:0.85rem">
+      <div style="display:flex;gap:2rem;align-items:flex-start;flex-wrap:wrap">
+        <div>
+          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;font-weight:600;margin-bottom:0.4rem">Mode</div>
+          <div style="display:flex;gap:0.75rem">
+            <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.8rem;cursor:pointer">
+              <input type="radio" name="mode-pick" value="dark"  ${activeMode !== "light" ? "checked" : ""} onchange="updateMode('dark')"  style="accent-color:var(--accent)"> Dark
+            </label>
+            <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.8rem;cursor:pointer">
+              <input type="radio" name="mode-pick" value="light" ${activeMode === "light" ? "checked" : ""} onchange="updateMode('light')" style="accent-color:var(--accent)"> Light
+            </label>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;font-weight:600;margin-bottom:0.4rem">Accent Color</div>
+          <div style="display:flex;align-items:center;gap:0.6rem">
+            <input type="color" id="accent-picker" value="${activeAccent}"
+              oninput="updateAccent(this.value)"
+              style="width:40px;height:32px;border:1px solid var(--border2);border-radius:5px;background:var(--bg);cursor:pointer;padding:2px;flex:none">
+            <span id="accent-hex" style="font-size:0.78rem;color:var(--muted);font-family:monospace">${activeAccent}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <form method="POST" action="/api/theme" style="display:flex;align-items:center;gap:0.75rem">
+      <input type="hidden" name="THEME"        id="THEME"        value="${activeTheme}">
+      <input type="hidden" name="THEME_MODE"   id="THEME_MODE"   value="${activeMode}">
+      <input type="hidden" name="THEME_ACCENT" id="THEME_ACCENT" value="${activeAccent}">
+      <button type="submit" class="btn btn-sm">Apply Theme</button>
+      <span style="font-size:0.7rem;color:var(--muted)">Active: <strong style="color:var(--accent)">${activeTheme === "custom" ? "Custom (" + activeMode + ")" : activeTheme.charAt(0).toUpperCase() + activeTheme.slice(1)}</strong></span>
+    </form>
+  </div>
+
+  <script>
+  function pickTheme(name) {
+    document.querySelectorAll('.theme-card').forEach(c => c.classList.remove('active'));
+    document.getElementById('tc-' + name).classList.add('active');
+    document.getElementById('THEME').value = name;
+    document.getElementById('custom-builder').style.display = name === 'custom' ? 'block' : 'none';
+  }
+  function updateMode(mode) {
+    document.getElementById('THEME_MODE').value = mode;
+  }
+  function updateAccent(color) {
+    document.getElementById('THEME_ACCENT').value = color;
+    document.getElementById('accent-hex').textContent = color;
+    var s = document.getElementById('custom-swatch');
+    if (s) s.style.background = color;
+  }
+  </script>`;
+}
+
 export function renderSettingsForm(
   current: Record<string, string>,
   toast?: { type: "success" | "error"; text: string }
@@ -154,6 +264,7 @@ export function renderSettingsForm(
 
   return `
   ${toastHtml}
+  ${renderThemeSection(current)}
 
   <!-- ── Danger Zone confirmation modal ─────────────────── -->
   <div id="danger-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center"

@@ -122,6 +122,7 @@ export async function renderDashboard(
   page: number,
   toast?: { type: "success" | "error"; text: string }
 ): Promise<string> {
+  const settings = await getSettings();
   let tabContent: string;
 
   switch (tab) {
@@ -143,11 +144,9 @@ export async function renderDashboard(
     case "commands":
       tabContent = await renderCommands();
       break;
-    case "settings": {
-      const settings = await getSettings();
+    case "settings":
       tabContent = renderSettingsForm(settings, toast);
       break;
-    }
     default:
       tabContent = await renderStatus();
   }
@@ -156,5 +155,5 @@ export async function renderDashboard(
     ? `<div class="toast toast-${toast.type}">${toast.text}</div>`
     : "";
 
-  return layout("Dashboard", toastHtml + tabContent, tab || "status");
+  return layout("Dashboard", toastHtml + tabContent, tab || "status", settings);
 }

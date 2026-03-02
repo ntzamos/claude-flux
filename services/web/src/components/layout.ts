@@ -1,4 +1,72 @@
-export function layout(title: string, content: string, activeTab?: string): string {
+interface ThemeVars {
+  bg: string; surface: string; surface2: string; surface3: string;
+  border: string; border2: string; text: string; muted: string; muted2: string;
+  accent: string; accentR: number; accentG: number; accentB: number;
+  accentText: string; btnHover: string; gridLineOpacity: number;
+}
+
+function getThemeVars(theme: string, accent: string, mode: string): ThemeVars {
+  const presets: Record<string, ThemeVars> = {
+    flux: {
+      bg: "#090d09", surface: "#0d130d", surface2: "#121a12", surface3: "#172017",
+      border: "#1a2a1a", border2: "#243624", text: "#d8edd8", muted: "#4a674a", muted2: "#2e452e",
+      accent: "#00e676", accentR: 0, accentG: 230, accentB: 118,
+      accentText: "#030f07", btnHover: "#1ffb8a", gridLineOpacity: 0.022,
+    },
+    midnight: {
+      bg: "#08090f", surface: "#0c1018", surface2: "#111520", surface3: "#161d2c",
+      border: "#1c2540", border2: "#263660", text: "#c8d8f0", muted: "#4a5d80", muted2: "#2a3555",
+      accent: "#38bdf8", accentR: 56, accentG: 189, accentB: 248,
+      accentText: "#030c18", btnHover: "#7dd3fc", gridLineOpacity: 0.022,
+    },
+    ember: {
+      bg: "#0f0a06", surface: "#160d08", surface2: "#1d1209", surface3: "#24180c",
+      border: "#2e1c0a", border2: "#3c2510", text: "#f0dcc8", muted: "#7a5835", muted2: "#4a3018",
+      accent: "#f59e0b", accentR: 245, accentG: 158, accentB: 11,
+      accentText: "#1a0a00", btnHover: "#fbbf24", gridLineOpacity: 0.022,
+    },
+  };
+
+  if (presets[theme]) return presets[theme];
+
+  // Custom theme — derive from user-picked accent + mode
+  const hex = /^#[0-9a-f]{6}$/i.test(accent) ? accent : "#8b5cf6";
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  const accentText = luminance > 140 ? "#1a1a1a" : "#f5f5f5";
+  const btnR = Math.min(255, r + 30).toString(16).padStart(2, "0");
+  const btnG = Math.min(255, g + 30).toString(16).padStart(2, "0");
+  const btnB = Math.min(255, b + 30).toString(16).padStart(2, "0");
+  const btnHover = `#${btnR}${btnG}${btnB}`;
+
+  if (mode === "light") {
+    return {
+      bg: "#f3f4f6", surface: "#ffffff", surface2: "#f0f0f4", surface3: "#e5e7eb",
+      border: "#e5e7eb", border2: "#d1d5db", text: "#111827", muted: "#6b7280", muted2: "#9ca3af",
+      accent: hex, accentR: r, accentG: g, accentB: b,
+      accentText, btnHover, gridLineOpacity: 0.06,
+    };
+  }
+
+  return {
+    bg: "#0a0a0a", surface: "#111111", surface2: "#1a1a1a", surface3: "#222222",
+    border: "#2a2a2a", border2: "#333333", text: "#e8e8e8", muted: "#666666", muted2: "#444444",
+    accent: hex, accentR: r, accentG: g, accentB: b,
+    accentText, btnHover, gridLineOpacity: 0.04,
+  };
+}
+
+export function layout(title: string, content: string, activeTab?: string, themeSettings?: Record<string, string>): string {
+  const t = getThemeVars(
+    themeSettings?.THEME || "flux",
+    themeSettings?.THEME_ACCENT || "",
+    themeSettings?.THEME_MODE || "dark",
+  );
+  const { accentR: r, accentG: g, accentB: b } = t;
+  const a = (op: number) => `rgba(${r},${g},${b},${op})`;
+
   const tabs = [
     { id: "status",   label: "Status",   icon: "◉" },
     { id: "tasks",    label: "Tasks",    icon: "♧" },
@@ -10,9 +78,9 @@ export function layout(title: string, content: string, activeTab?: string): stri
     { id: "settings", label: "Settings", icon: "⚙" },
   ];
 
-  const navLinks = tabs.map(t => {
-    const active = t.id === activeTab ? " active" : "";
-    return `<a href="/dashboard?tab=${t.id}" class="tab-link${active}">${t.icon} ${t.label}</a>`;
+  const navLinks = tabs.map(tab => {
+    const active = tab.id === activeTab ? " active" : "";
+    return `<a href="/dashboard?tab=${tab.id}" class="tab-link${active}">${tab.icon} ${tab.label}</a>`;
   }).join("\n");
 
   return `<!DOCTYPE html>
@@ -35,18 +103,21 @@ export function layout(title: string, content: string, activeTab?: string): stri
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:           #090d09;
-      --surface:      #0d130d;
-      --surface2:     #121a12;
-      --surface3:     #172017;
-      --border:       #1a2a1a;
-      --border2:      #243624;
-      --text:         #d8edd8;
-      --muted:        #4a674a;
-      --muted2:       #2e452e;
-      --accent:       #00e676;
-      --accent-dim:   rgba(0, 230, 118, 0.10);
-      --accent-glow:  rgba(0, 230, 118, 0.06);
+      --bg:           ${t.bg};
+      --surface:      ${t.surface};
+      --surface2:     ${t.surface2};
+      --surface3:     ${t.surface3};
+      --border:       ${t.border};
+      --border2:      ${t.border2};
+      --text:         ${t.text};
+      --muted:        ${t.muted};
+      --muted2:       ${t.muted2};
+      --accent:       ${t.accent};
+      --accent-dim:   ${a(0.10)};
+      --accent-glow:  ${a(0.06)};
+      --accent-text:  ${t.accentText};
+      --btn-hover:    ${t.btnHover};
+      --grid-line:    ${a(t.gridLineOpacity)};
       --red:          #ff5252;
       --yellow:       #ffd740;
       --green:        #00e676;
@@ -56,8 +127,8 @@ export function layout(title: string, content: string, activeTab?: string): stri
       font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
       background: var(--bg);
       background-image:
-        linear-gradient(rgba(0,230,118,0.022) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,230,118,0.022) 1px, transparent 1px);
+        linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
       background-size: 28px 28px;
       color: var(--text);
       min-height: 100vh;
@@ -167,7 +238,7 @@ export function layout(title: string, content: string, activeTab?: string): stri
       text-transform: uppercase;
       letter-spacing: 0.07em;
     }
-    .badge-green { background: rgba(0,230,118,0.1);  color: var(--accent); border: 1px solid rgba(0,230,118,0.2); }
+    .badge-green { background: ${a(0.10)}; color: var(--accent); border: 1px solid ${a(0.20)}; }
     .badge-red   { background: rgba(255,82,82,0.1);  color: #ff7070;       border: 1px solid rgba(255,82,82,0.2); }
     .badge-blue  { background: rgba(0,180,230,0.1);  color: #55d0f0;       border: 1px solid rgba(0,180,230,0.2); }
     .badge-gray  { background: var(--surface2);      color: var(--muted);  border: 1px solid var(--border); }
@@ -186,12 +257,12 @@ export function layout(title: string, content: string, activeTab?: string): stri
     }
     td { padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--border2); vertical-align: top; }
     tr:last-child td { border-bottom: none; }
-    tr:hover td { background: var(--accent-glow); }
+    tr:hover td { background: ${a(0.06)}; }
 
     /* ── Chat messages ────────────────────────────────── */
     .message { padding: 0.85rem 1rem; border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.84rem; line-height: 1.55; }
     .message-user      { background: var(--surface2); border: 1px solid var(--border); }
-    .message-assistant { background: rgba(0,230,118,0.04); border: 1px solid rgba(0,230,118,0.12); }
+    .message-assistant { background: ${a(0.04)}; border: 1px solid ${a(0.12)}; }
     .message-system    { background: var(--surface); color: var(--muted); font-size: 0.78rem; border: 1px solid var(--border); }
     .message-meta      { font-size: 0.65rem; color: var(--muted); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.07em; }
 
@@ -217,7 +288,7 @@ export function layout(title: string, content: string, activeTab?: string): stri
     }
     input:focus, select:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(0,230,118,0.1);
+      box-shadow: 0 0 0 2px ${a(0.10)};
     }
     input::placeholder { color: var(--muted2); }
     .reveal-btn {
@@ -242,7 +313,7 @@ export function layout(title: string, content: string, activeTab?: string): stri
     /* ── Buttons ──────────────────────────────────────── */
     .btn {
       background: var(--accent);
-      color: #030f07;
+      color: var(--accent-text);
       border: none;
       border-radius: 7px;
       padding: 0.65rem 1.6rem;
@@ -254,7 +325,7 @@ export function layout(title: string, content: string, activeTab?: string): stri
       letter-spacing: 0.08em;
       transition: background 0.15s, box-shadow 0.15s;
     }
-    .btn:hover { background: #1ffb8a; box-shadow: 0 0 12px rgba(0,230,118,0.3); }
+    .btn:hover { background: var(--btn-hover); box-shadow: 0 0 12px ${a(0.30)}; }
     .btn-sm { padding: 0.4rem 0.9rem; font-size: 0.7rem; }
     .btn-outline {
       background: transparent;
@@ -275,7 +346,7 @@ export function layout(title: string, content: string, activeTab?: string): stri
       z-index: 100;
       animation: fadeIn 0.2s ease;
     }
-    .toast-success { background: rgba(0,230,118,0.12); color: var(--accent); border: 1px solid rgba(0,230,118,0.25); }
+    .toast-success { background: ${a(0.12)}; color: var(--accent); border: 1px solid ${a(0.25)}; }
     .toast-error   { background: rgba(255,82,82,0.12);  color: #ff7070;       border: 1px solid rgba(255,82,82,0.25); }
     @keyframes fadeIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
 
@@ -290,6 +361,18 @@ export function layout(title: string, content: string, activeTab?: string): stri
     }
     .pagination a { padding: 0.3rem 0.7rem; border: 1px solid var(--border2); border-radius: 5px; color: var(--text); }
     .pagination a:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Theme cards ──────────────────────────────────── */
+    .theme-card {
+      border: 2px solid var(--border2);
+      border-radius: 10px;
+      padding: 0.85rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+    .theme-card:hover { border-color: var(--muted); }
+    .theme-card.active { border-color: var(--accent); background: ${a(0.06)}; }
 
     /* ── Mobile ───────────────────────────────────────── */
     @media (max-width: 700px) {
