@@ -1,6 +1,8 @@
 import postgres from "postgres";
 
-export const sql = postgres(process.env.DATABASE_URL!);
+export const sql = postgres(
+  process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/postgres"
+);
 
 /**
  * Fire-and-forget: generate OpenAI embedding and store on the row.
