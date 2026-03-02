@@ -1,0 +1,38 @@
+# Environment
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# Bun
+bun.lockb
+
+# Personal config (keep examples, ignore actual)
+config/profile.md
+config/schedule.json
+
+# Runtime files
+*.lock
+*.log
+logs/
+temp/
+uploads/
+session.json
+
+# Whisper models (large binary files)
+whisper-models/*.bin
+whisper-models/*.bin.q*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+
+#claude
+.claude/

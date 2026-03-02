@@ -1,0 +1,1 @@
+-- Webhooks migration removed. Embeddings are now generated directly by the relay.
