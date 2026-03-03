@@ -405,11 +405,11 @@ async function callClaude(
 ): Promise<string> {
   const args = [CLAUDE_PATH, "-p", prompt];
 
-  // Expire session after 24 hours of inactivity
+  // Expire session after 2 hours of inactivity
   if (session.sessionId && session.lastActivity) {
     const elapsed = Date.now() - new Date(session.lastActivity).getTime();
-    if (elapsed > 24 * 60 * 60 * 1000) {
-      console.log("[session] Expired after 24h inactivity — starting fresh");
+    if (elapsed > 2 * 60 * 60 * 1000) {
+      console.log("[session] Expired after 2h inactivity — starting fresh");
       session.sessionId = null;
       await saveSession(session);
     }
