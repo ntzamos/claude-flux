@@ -1,13 +1,18 @@
 import { sql } from "../db.ts";
 
 const BUILTIN_COMMANDS = [
+  { command: "start",    description: "Welcome message and quick-start guide" },
   { command: "help",     description: "Show all available commands" },
   { command: "tasks",    description: "List scheduled tasks" },
+  { command: "memory",   description: "List all memory items" },
   { command: "session",  description: "Current session info" },
   { command: "botinfo",  description: "Bot configuration & status" },
   { command: "userinfo", description: "Your user info" },
   { command: "restart",  description: "Restart the bot" },
   { command: "callme",   description: "Start an AI phone call (requires ElevenLabs)" },
+  { command: "mcps",     description: "List all installed MCP servers" },
+  { command: "tunnel",   description: "Enable/disable remote dashboard access (/tunnel on|off|status)" },
+  { command: "detect",   description: "Detect defects in an image — send as caption with a photo" },
 ];
 
 export async function renderCommands(): Promise<string> {
