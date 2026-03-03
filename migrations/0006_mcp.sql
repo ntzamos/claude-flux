@@ -17,10 +17,3 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
 ALTER TABLE mcp_servers ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all for service role" ON mcp_servers FOR ALL USING (true);
 
--- Default MCP Servers
--- Migration 0007
--- Seeds built-in MCP servers so they are available on first boot without manual configuration.
-
-INSERT INTO mcp_servers (name, type, command, args, env)
-VALUES ('claude-skills', 'stdio', 'npx', '["-y", "claude-skills-mcp"]', '{}')
-ON CONFLICT (name) DO NOTHING;
