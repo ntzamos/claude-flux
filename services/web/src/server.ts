@@ -229,6 +229,13 @@ const server = Bun.serve({
       return new Response("ok");
     }
 
+    // ── Landing page ─────────────────────────────────────────
+    if (pathname === "/landing") {
+      // @ts-ignore
+      const file = Bun.file("/app/docs/index.html");
+      return new Response(file, { headers: { "Content-Type": "text/html" } });
+    }
+
     // ── Static fonts ─────────────────────────────────────────
     if (pathname.startsWith("/fonts/")) {
       const name = pathname.slice(7).replace(/[^a-zA-Z0-9._-]/g, "");
