@@ -1355,7 +1355,8 @@ function buildPrompt(
       "\n3. Draw red bbox + label. Add 2.4x zoomed inset at bottom." +
       "\n4. Save to /files/defect-annotated.jpg" +
       "\n5. Run: bash /home/relay/app/actions/send_file_to_telegram.sh /files/defect-annotated.jpg" +
-      "\n6. Reply plain text: defect type, location, Grade A/B/C/D + one sentence reason."
+      "\n6. Reply plain text: defect type, location, Grade A/B/C/D + one sentence reason." +
+      "\nGrading rules: A=like new (no defects), B=one or more light scratches, C=heavy/deep scratch or multiple scratches, D=at least one crack."
     );
     parts.push(`\nUser: [Image: ${imgPath}]\n\nRun the defect detection task above.`);
   } else {
