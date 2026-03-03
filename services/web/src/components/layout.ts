@@ -81,7 +81,7 @@ export function layout(title: string, content: string, activeTab?: string, theme
 
   const navLinks = tabs.map(tab => {
     const active = tab.id === activeTab ? " active" : "";
-    return `<a href="/dashboard?tab=${tab.id}" class="tab-link${active}">${tab.icon} ${tab.label}</a>`;
+    return `<a href="/dashboard?tab=${tab.id}" class="tab-link${active}">${tab.icon}<span class="tab-label"> ${tab.label}</span></a>`;
   }).join("\n");
 
   return `<!DOCTYPE html>
@@ -377,7 +377,10 @@ export function layout(title: string, content: string, activeTab?: string, theme
 
     /* ── Mobile ───────────────────────────────────────── */
     @media (max-width: 700px) {
-      .main { padding: 0.75rem 0.75rem; }
+      .topbar { padding: 0.6rem 1rem; }
+      .tabnav { padding: 0 0.5rem; }
+      .tab-link { padding: 0.6rem 0.7rem; font-size: 0.62rem; letter-spacing: 0.06em; }
+      .main { padding: 0.65rem 0.65rem; }
       .card { padding: 0.75rem 0.85rem; margin-bottom: 0.6rem; }
       .card-title { margin-bottom: 0.55rem; }
       .stat-value { font-size: 1.9rem; }
@@ -386,6 +389,12 @@ export function layout(title: string, content: string, activeTab?: string, theme
       th { padding: 0.4rem 0.6rem; }
       .grid-2, .grid-3 { grid-template-columns: 1fr; gap: 0.5rem; }
       .stat-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 0.4rem !important; }
+      .btn { padding: 0.55rem 1.2rem; }
+      .btn-sm { padding: 0.38rem 0.8rem; }
+    }
+    @media (max-width: 480px) {
+      .tab-link .tab-label { display: none; }
+      .tab-link { padding: 0.6rem 0.75rem; font-size: 0.9rem; }
     }
   </style>
 </head>

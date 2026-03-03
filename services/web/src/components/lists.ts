@@ -155,10 +155,10 @@ export async function renderLists(selectedListId?: string): Promise<string> {
   </div>
 
   <!-- ── Main layout ────────────────────────────────────────── -->
-  <div style="display:grid;grid-template-columns:220px 1fr;gap:1rem;align-items:start">
+  <div id="lists-grid" style="display:grid;grid-template-columns:220px 1fr;gap:1rem;align-items:start">
 
     <!-- Sidebar -->
-    <div>
+    <div id="lists-sidebar">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.65rem">
         <span style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">Lists</span>
         <button class="btn btn-sm" onclick="openNewListModal()"
@@ -176,7 +176,11 @@ export async function renderLists(selectedListId?: string): Promise<string> {
   <style>
   @media (max-width:700px) {
     #lists-grid { grid-template-columns: 1fr !important; }
+    #lists-sidebar.mobile-hidden { display: none !important; }
+    #items-panel.mobile-hidden { display: none !important; }
+    .lists-back-btn { display: inline-flex !important; }
   }
+  .lists-back-btn { display: none; }
   </style>
 
   <script>
@@ -196,6 +200,8 @@ export async function renderLists(selectedListId?: string): Promise<string> {
     return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
+  function isMobile() { return window.innerWidth <= 700; }
+
   function selectList(id) {
     ACTIVE_ID = id;
     // Update sidebar highlight
@@ -206,9 +212,19 @@ export async function renderLists(selectedListId?: string): Promise<string> {
       el.querySelector('.lsi-name').style.color = active ? 'var(--accent)' : 'var(--text)';
     });
     renderItems();
+    // Mobile: show items panel, hide sidebar
+    if (isMobile()) {
+      document.getElementById('lists-sidebar').classList.add('mobile-hidden');
+      document.getElementById('items-panel').classList.remove('mobile-hidden');
+    }
     const u = new URL(window.location.href);
     u.searchParams.set('lid', id);
     history.replaceState(null, '', u.toString());
+  }
+
+  function goBackToSidebar() {
+    document.getElementById('lists-sidebar').classList.remove('mobile-hidden');
+    document.getElementById('items-panel').classList.add('mobile-hidden');
   }
 
   function renderItems() {
@@ -285,11 +301,15 @@ export async function renderLists(selectedListId?: string): Promise<string> {
     panel.innerHTML = \`
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
-          <div>
-            <span style="font-size:1rem;font-weight:600">\${xesc(list.name)}</span>
-            \${list.description ? \`<span style="font-size:0.78rem;color:var(--muted);margin-left:0.5rem">\${xesc(list.description)}</span>\` : ''}
+          <div style="display:flex;align-items:center;gap:0.5rem;min-width:0">
+            <button class="btn btn-outline btn-sm lists-back-btn" onclick="goBackToSidebar()"
+                    style="padding:0.3rem 0.6rem;font-size:0.75rem;flex-shrink:0">← Back</button>
+            <div style="min-width:0">
+              <span style="font-size:1rem;font-weight:600">\${xesc(list.name)}</span>
+              \${list.description ? \`<span style="font-size:0.78rem;color:var(--muted);margin-left:0.5rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;max-width:140px;vertical-align:bottom">\${xesc(list.description)}</span>\` : ''}
+            </div>
           </div>
-          <div style="display:flex;gap:0.4rem">
+          <div style="display:flex;gap:0.4rem;flex-shrink:0">
             <button class="btn btn-outline btn-sm" onclick="openEditListModal('\${list.id}')">Edit</button>
             <button class="btn btn-sm"
                     style="background:rgba(255,82,82,0.1);color:#ff7070;border:1px solid rgba(255,82,82,0.22)"
@@ -379,7 +399,12 @@ export async function renderLists(selectedListId?: string): Promise<string> {
   });
 
   if (ACTIVE_ID) {
+    const hasLidParam = new URL(window.location.href).searchParams.has('lid');
     selectList(ACTIVE_ID);
+    // On mobile, show sidebar first unless user navigated directly to a specific list
+    if (isMobile() && !hasLidParam) {
+      goBackToSidebar();
+    }
   } else {
     document.getElementById('items-panel').innerHTML =
       '<div class="card" style="color:var(--muted);text-align:center;padding:2rem;font-size:0.83rem">Create a list to get started.</div>';
