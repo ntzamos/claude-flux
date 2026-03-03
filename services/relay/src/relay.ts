@@ -1123,13 +1123,19 @@ async function checkStartupStatus(): Promise<string> {
   const lines: string[] = ["Bot started successfully! 🤖"];
   // Only show dashboard URL if tunneling is enabled
   try {
-    const [hostRows, tunnelRows] = await Promise.all([
-      sql`SELECT value FROM settings WHERE key = 'WEB_HOST'`,
-      sql`SELECT value FROM settings WHERE key = 'NGROK_ENABLED'`,
-    ]);
-    const webHost = hostRows[0]?.value;
+    const tunnelRows = await sql`SELECT value FROM settings WHERE key = 'TUNNEL_ENABLED'`;
     const tunnelEnabled = tunnelRows[0]?.value === "true";
-    if (webHost && tunnelEnabled) lines.push(`Dashboard: ${webHost}`);
+    if (tunnelEnabled) {
+      // Try to get the live ngrok URL
+      try {
+        const res = await fetch("http://localhost:4040/api/tunnels");
+        const data = (await res.json()) as { tunnels?: Array<{ proto: string; public_url: string }> };
+        const ngrokUrl = data.tunnels?.find((t) => t.proto === "https")?.public_url;
+        if (ngrokUrl) lines.push(`Dashboard: ${ngrokUrl}`);
+      } catch {
+        // ngrok not ready yet, skip URL
+      }
+    }
   } catch {
     if (process.env.WEB_HOST) lines.push(`Dashboard: ${process.env.WEB_HOST}`);
   }
