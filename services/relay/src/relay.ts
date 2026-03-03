@@ -700,6 +700,7 @@ const BOT_COMMANDS = [
   { command: "restart", description: "Restart the bot" },
   { command: "tunnel", description: "Enable/disable remote dashboard access (/tunnel on|off|status)" },
   { command: "detect", description: "Detect defects in an image — send as caption with a photo" },
+  { command: "newsession", description: "Clear current Claude session and start fresh" },
 ];
 
 bot.command("start", async (ctx) => {
@@ -777,6 +778,13 @@ bot.command("session", async (ctx) => {
     lines.push(`Last activity: ${last}`);
   }
   await ctx.reply(lines.join("\n"));
+});
+
+bot.command("newsession", async (ctx) => {
+  session.sessionId = null;
+  session.lastActivity = new Date().toISOString();
+  await saveSession(session);
+  await ctx.reply("Session cleared. Next message will start a fresh Claude session.");
 });
 
 bot.command("botinfo", async (ctx) => {
