@@ -1174,7 +1174,7 @@ bot.on("message:photo", async (ctx) => {
 
       const [memoryContext, recentHistory] = await Promise.all([
         getMemoryContext(),
-        getRecentHistory(),
+        isDetect ? Promise.resolve("") : getRecentHistory(),
       ]);
 
       await saveMessage("user", `[Image]: ${caption}`);
