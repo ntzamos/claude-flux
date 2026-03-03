@@ -177,13 +177,15 @@ let isActive = false;
 let pendingCount = 0;
 let processingChain: Promise<void> = Promise.resolve();
 
-function enqueue(fn: () => Promise<void>): void {
+function enqueue(fn: () => Promise<void>, queueId?: string): void {
   pendingCount++;
   processingChain = processingChain.then(async () => {
     pendingCount--;
     isActive = true;
+    if (queueId) await updateQueueStatus(queueId, "processing");
     try {
       await fn();
+      if (queueId) await updateQueueStatus(queueId, "done");
     } finally {
       isActive = false;
     }
@@ -295,6 +297,28 @@ async function saveMessage(
     if (id) embedContent("messages", id, content); // fire-and-forget
   } catch (error) {
     console.error("DB save error:", error);
+  }
+}
+
+async function saveToQueue(chatId: number, payload: Record<string, unknown>): Promise<string | null> {
+  if (!process.env.DATABASE_URL) return null;
+  try {
+    const rows = await sql`
+      INSERT INTO message_queue (chat_id, payload) VALUES (${chatId}, ${sql.json(payload)}) RETURNING id
+    `;
+    return rows[0]?.id ?? null;
+  } catch (e) {
+    console.error("[queue] Failed to save:", e);
+    return null;
+  }
+}
+
+async function updateQueueStatus(id: string, status: "processing" | "done" | "failed"): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    await sql`UPDATE message_queue SET status = ${status}, processed_at = NOW() WHERE id = ${id}`;
+  } catch (e) {
+    console.error("[queue] Failed to update status:", e);
   }
 }
 
@@ -826,6 +850,58 @@ bot.command("callme", async (ctx) => {
 });
 
 // ============================================================
+// QUEUE RECOVERY — replays pending text messages after restart
+// ============================================================
+
+function buildFakeCtx(chatId: number): any {
+  return {
+    chat: { id: chatId },
+    reply: (text: string, opts?: any) => bot.api.sendMessage(chatId, text, opts),
+    replyWithChatAction: (action: string) => bot.api.sendChatAction(chatId, action as any),
+    replyWithVoice: (file: InputFile) => bot.api.sendVoice(chatId, file),
+    api: bot.api,
+  };
+}
+
+async function recoverPendingMessages(): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const rows = await sql`
+      SELECT id, chat_id, payload FROM message_queue
+      WHERE status IN ('pending', 'processing')
+      ORDER BY created_at ASC
+    `;
+    if (!rows.length) return;
+    console.log(`[queue] Recovering ${rows.length} pending message(s)...`);
+    for (const row of rows) {
+      const { id, chat_id, payload } = row;
+      if (payload.type !== "text") {
+        await updateQueueStatus(id, "failed");
+        continue;
+      }
+      const ctx = buildFakeCtx(Number(chat_id));
+      enqueue(async () => {
+        const text = payload.text as string;
+        const thinkingMsg = await ctx.reply("Thinking…");
+        await ctx.replyWithChatAction("typing");
+        const [relevantContext, memoryContext, recentHistory] = await Promise.all([
+          getRelevantContext(text),
+          getMemoryContext(),
+          getRecentHistory(),
+        ]);
+        await saveMessage("user", text);
+        const enrichedPrompt = buildPrompt(text, relevantContext, memoryContext, recentHistory);
+        const rawResponse = await callClaude(enrichedPrompt, { resume: true });
+        await saveMessage("assistant", rawResponse);
+        await handleClaudeResponse(ctx, rawResponse, { thinkingMsgId: thinkingMsg.message_id });
+      }, id);
+    }
+  } catch (e) {
+    console.error("[queue] Recovery failed:", e);
+  }
+}
+
+// ============================================================
 // MESSAGE HANDLERS
 // ============================================================
 
@@ -837,6 +913,8 @@ bot.on("message:text", async (ctx) => {
   if (text.startsWith("/")) return;
 
   console.log(`Message: ${text.substring(0, 50)}...`);
+
+  const queueId = await saveToQueue(ctx.chat!.id, { type: "text", text });
 
   enqueue(async () => {
     const thinkingMsg = await ctx.reply("Thinking…");
@@ -856,7 +934,7 @@ bot.on("message:text", async (ctx) => {
 
     await saveMessage("assistant", rawResponse);
     await handleClaudeResponse(ctx, rawResponse, { thinkingMsgId: thinkingMsg.message_id });
-  });
+  }, queueId ?? undefined);
 });
 
 // Voice messages
@@ -1415,6 +1493,8 @@ bot.start({
     console.log("Bot is running!");
     // Register commands in Telegram menu
     await bot.api.setMyCommands(BOT_COMMANDS).catch(() => {});
+    // Replay any messages that were queued before the last restart
+    recoverPendingMessages().catch((e) => console.error("[queue] Recovery error:", e));
     if (ALLOWED_USER_ID) {
       // Delay 20s to let ngrok register its URL before we send the dashboard link
       setTimeout(async () => {
