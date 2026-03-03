@@ -140,26 +140,49 @@ export async function renderChat(page = 1): Promise<string> {
       const res = await fetch('/api/messages?since=' + lastMsgId);
       const data = await res.json();
       if (data.data && data.data.length > 0) {
+        const wasAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
         // Remove optimistic bubble once real messages arrive
         if (optimisticBubble) {
           optimisticBubble.remove();
           optimisticBubble = null;
         }
-        const wasAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
         for (const m of data.data) {
           list.insertBefore(makeBubble(m), anchor);
           if (m.id > lastMsgId) lastMsgId = m.id;
         }
-        if (wasAtBottom) anchor.scrollIntoView({ behavior: 'smooth' });
+        // Clear thinking status when Claude's reply arrives
+        const hasAssistant = data.data.some((m) => m.role === 'assistant');
+        if (hasAssistant) {
+          const status = document.getElementById('chat-status');
+          if (status && status.dataset.thinking) {
+            status.textContent = '';
+            delete status.dataset.thinking;
+          }
+        }
+        if (wasAtBottom) list.scrollTop = list.scrollHeight;
       }
     } catch (e) {}
   }
 
   // Poll every 2.5 seconds for new messages
-  setInterval(pollMessages, 2500);
+  let pollTimer = setInterval(pollMessages, 2500);
 
-  // Scroll to bottom on load
-  anchor?.scrollIntoView();
+  function fastPoll() {
+    // Poll quickly after sending until Claude replies, then resume normal cadence
+    clearInterval(pollTimer);
+    let ticks = 0;
+    const fast = setInterval(async () => {
+      await pollMessages();
+      ticks++;
+      if (ticks >= 20 || !optimisticBubble) {
+        clearInterval(fast);
+        pollTimer = setInterval(pollMessages, 2500);
+      }
+    }, 1000);
+  }
+
+  // Scroll to bottom on load — defer one frame so layout is complete
+  requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
 
   async function sendChatMsg() {
     const input  = document.getElementById('chat-input');
@@ -177,17 +200,29 @@ export async function renderChat(page = 1): Promise<string> {
     optimisticBubble.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:0.75rem';
     optimisticBubble.innerHTML = \`<div style="max-width:72%"><div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem;letter-spacing:0.05em">\${fmt(new Date())}</div><div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">\${esc(msg)}</div></div>\`;
     list.insertBefore(optimisticBubble, anchor);
-    anchor.scrollIntoView({ behavior: 'smooth' });
+    list.scrollTop = list.scrollHeight;
 
     try {
-      await fetch('/api/chat', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg }),
       });
+      if (res.ok) {
+        status.style.color = 'var(--muted)';
+        status.textContent = 'Claude is thinking…';
+        status.dataset.thinking = '1';
+        fastPoll();
+      } else {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        status.style.color = 'var(--red)';
+        status.textContent = err.error || 'Failed to send message';
+        if (optimisticBubble) { optimisticBubble.remove(); optimisticBubble = null; }
+      }
     } catch (e) {
       status.style.color = 'var(--red)';
       status.textContent = 'Network error — is the relay running?';
+      if (optimisticBubble) { optimisticBubble.remove(); optimisticBubble = null; }
     } finally {
       input.focus();
     }

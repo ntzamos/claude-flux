@@ -1432,39 +1432,33 @@ Bun.serve({
         });
       }
 
-      // Run through the same queue as Telegram messages
-      return await new Promise<Response>((resolve) => {
-        enqueue(async () => {
-          try {
-            const [relevantContext, memoryContext, recentHistory] = await Promise.all([
-              getRelevantContext(message),
-              getMemoryContext(),
-              getRecentHistory(),
-            ]);
+      // Enqueue and return immediately — response arrives via polling
+      enqueue(async () => {
+        try {
+          const [relevantContext, memoryContext, recentHistory] = await Promise.all([
+            getRelevantContext(message),
+            getMemoryContext(),
+            getRecentHistory(),
+          ]);
 
-            await saveMessage("user", message, "web");
+          await saveMessage("user", message, "web");
 
-            const enrichedPrompt = buildPrompt(message, relevantContext, memoryContext, recentHistory);
-            const rawResponse = await callClaude(enrichedPrompt, { resume: true });
+          const enrichedPrompt = buildPrompt(message, relevantContext, memoryContext, recentHistory);
+          const rawResponse = await callClaude(enrichedPrompt, { resume: true });
 
-            const afterMemory = await processMemoryIntents(rawResponse);
-            const afterSchedule = await processScheduleIntents(afterMemory);
-            const { clean } = parseAskIntent(afterSchedule);
-            const reply = clean || rawResponse;
+          const afterMemory = await processMemoryIntents(rawResponse);
+          const afterSchedule = await processScheduleIntents(afterMemory);
+          const { clean } = parseAskIntent(afterSchedule);
+          const reply = clean || rawResponse;
 
-            await saveMessage("assistant", reply, "web");
+          await saveMessage("assistant", reply, "web");
+        } catch (err: any) {
+          console.error("[http] Chat error:", err);
+        }
+      });
 
-            resolve(new Response(JSON.stringify({ response: reply }), {
-              headers: { "Content-Type": "application/json" },
-            }));
-          } catch (err: any) {
-            console.error("[http] Chat error:", err);
-            resolve(new Response(JSON.stringify({ error: err.message }), {
-              status: 500,
-              headers: { "Content-Type": "application/json" },
-            }));
-          }
-        });
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "Content-Type": "application/json" },
       });
     } catch (err: any) {
       console.error("[http] Chat error:", err);
