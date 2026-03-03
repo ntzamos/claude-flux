@@ -1,5 +1,7 @@
 # Claude Flux
 
+**[🌐 Landing page](https://ntzamos.github.io/claude-flux)**
+
 A self-hosted AI assistant on Telegram, powered by Claude Code CLI.
 Runs entirely on your machine via Docker — no cloud accounts except API keys.
 
