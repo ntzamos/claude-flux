@@ -530,7 +530,7 @@ function extractFileTag(response: string): { clean: string; fileName: string | n
 async function handleClaudeResponse(
   ctx: Context,
   rawResponse: string,
-  opts?: { voiceReply?: boolean; thinkingMsgId?: number }
+  opts?: { voiceReply?: boolean; thinkingMsgId?: number; replyToMessageId?: number }
 ): Promise<void> {
   console.log("[relay] Raw Claude response:", rawResponse.substring(0, 500));
   const afterMemory = await processMemoryIntents(rawResponse);
@@ -544,12 +544,12 @@ async function handleClaudeResponse(
     const keyboard = new InlineKeyboard()
       .text("✅ Yes", `confirm:${key}`)
       .text("❌ No", `cancel:${key}`);
-    if (clean) await sendResponse(ctx, clean, opts?.thinkingMsgId);
+    if (clean) await sendResponse(ctx, clean, opts?.thinkingMsgId, opts?.replyToMessageId);
     else if (opts?.thinkingMsgId) await ctx.api.deleteMessage(ctx.chat!.id, opts.thinkingMsgId).catch(() => {});
     if (fileName) await ctx.reply(`File saved: ${fileName}\nView: ${process.env.WEB_HOST || ""}/dashboard?tab=files`);
     await ctx.reply(`Allow: ${ask.action}?`, { reply_markup: keyboard });
   } else {
-    await sendResponse(ctx, clean, opts?.thinkingMsgId);
+    await sendResponse(ctx, clean, opts?.thinkingMsgId, opts?.replyToMessageId);
     if (fileName) {
       await ctx.reply(`File saved: ${fileName}\nView at: ${process.env.WEB_HOST || ""}/dashboard?tab=files`);
     }
@@ -1047,6 +1047,7 @@ bot.on("message:text", async (ctx) => {
 
   console.log(`Message: ${text.substring(0, 50)}...`);
 
+  const originalMessageId = ctx.message.message_id;
   const queueId = await saveToQueue(ctx.chat!.id, { type: "text", text });
 
   enqueue(async () => {
@@ -1069,7 +1070,7 @@ bot.on("message:text", async (ctx) => {
       await sendErrorWithRetry(ctx, rawResponse, enrichedPrompt, { resume: true }, thinkingMsg.message_id);
     } else {
       await saveMessage("assistant", rawResponse);
-      await handleClaudeResponse(ctx, rawResponse, { thinkingMsgId: thinkingMsg.message_id });
+      await handleClaudeResponse(ctx, rawResponse, { thinkingMsgId: thinkingMsg.message_id, replyToMessageId: originalMessageId });
     }
   }, queueId ?? undefined);
 });
@@ -1079,6 +1080,7 @@ bot.on("message:voice", async (ctx) => {
   const voice = ctx.message.voice;
   console.log(`Voice message: ${voice.duration}s`);
 
+  const originalMessageId = ctx.message.message_id;
   enqueue(async () => {
     const thinkingMsg = await ctx.reply("Thinking…");
     await ctx.replyWithChatAction("typing");
@@ -1117,7 +1119,7 @@ bot.on("message:voice", async (ctx) => {
       const rawResponse = await callClaude(enrichedPrompt, { resume: true });
 
       await saveMessage("assistant", rawResponse);
-      await handleClaudeResponse(ctx, rawResponse, { voiceReply: true, thinkingMsgId: thinkingMsg.message_id });
+      await handleClaudeResponse(ctx, rawResponse, { voiceReply: true, thinkingMsgId: thinkingMsg.message_id, replyToMessageId: originalMessageId });
     } catch (error) {
       console.error("Voice error:", error);
       await ctx.reply("Could not process voice message. Check logs for details.");
@@ -1129,6 +1131,7 @@ bot.on("message:voice", async (ctx) => {
 bot.on("message:photo", async (ctx) => {
   console.log("Image received");
 
+  const originalMessageId = ctx.message.message_id;
   enqueue(async () => {
     const thinkingMsg = await ctx.reply("Thinking…");
     await ctx.replyWithChatAction("typing");
@@ -1167,7 +1170,7 @@ bot.on("message:photo", async (ctx) => {
       );
 
       await saveMessage("assistant", claudeResponse);
-      await handleClaudeResponse(ctx, claudeResponse, { thinkingMsgId: thinkingMsg.message_id });
+      await handleClaudeResponse(ctx, claudeResponse, { thinkingMsgId: thinkingMsg.message_id, replyToMessageId: originalMessageId });
       await ctx.reply(`Photo saved: ${fileName}\nView at: ${process.env.WEB_HOST || ""}/dashboard?tab=files`);
     } catch (error) {
       console.error("Image error:", error);
@@ -1181,6 +1184,7 @@ bot.on("message:document", async (ctx) => {
   const doc = ctx.message.document;
   console.log(`Document: ${doc.file_name}`);
 
+  const originalMessageId = ctx.message.message_id;
   enqueue(async () => {
     const thinkingMsg = await ctx.reply("Thinking…");
     await ctx.replyWithChatAction("typing");
@@ -1213,7 +1217,7 @@ bot.on("message:document", async (ctx) => {
       );
 
       await saveMessage("assistant", claudeResponse);
-      await handleClaudeResponse(ctx, claudeResponse, { thinkingMsgId: thinkingMsg.message_id });
+      await handleClaudeResponse(ctx, claudeResponse, { thinkingMsgId: thinkingMsg.message_id, replyToMessageId: originalMessageId });
       await ctx.reply(`File saved: ${fileName}\nView at: ${process.env.WEB_HOST || ""}/dashboard?tab=files`);
     } catch (error) {
       console.error("Document error:", error);
@@ -1330,17 +1334,22 @@ function buildPrompt(
   return parts.join("\n");
 }
 
-async function sendResponse(ctx: Context, response: string, thinkingMsgId?: number): Promise<void> {
+async function sendResponse(ctx: Context, response: string, thinkingMsgId?: number, replyToMessageId?: number): Promise<void> {
   // Delete the "Thinking…" placeholder before sending the real reply
   if (thinkingMsgId) {
     await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsgId).catch(() => {});
   }
 
+  // If more messages are queued, reply to the original message so the user knows which response is which
+  const replyOpts = (pendingCount > 0 && replyToMessageId)
+    ? { reply_parameters: { message_id: replyToMessageId } }
+    : undefined;
+
   // Telegram has a 4096 character limit
   const MAX_LENGTH = 4000;
 
   if (response.length <= MAX_LENGTH) {
-    await ctx.reply(response);
+    await ctx.reply(response, replyOpts);
     return;
   }
 
@@ -1365,7 +1374,7 @@ async function sendResponse(ctx: Context, response: string, thinkingMsgId?: numb
   }
 
   for (const chunk of chunks) {
-    await ctx.reply(chunk);
+    await ctx.reply(chunk, replyOpts);
   }
 }
 
