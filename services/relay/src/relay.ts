@@ -498,6 +498,25 @@ bot.on("callback_query:data", async (ctx) => {
       console.warn("[relay] editMessageReplyMarkup failed (non-fatal):", e);
     }
     await ctx.reply("Cancelled.");
+  } else if (data === "tunnel:on") {
+    const tokenRows = await sql`SELECT value FROM settings WHERE key = 'NGROK_AUTH_TOKEN'`;
+    const token = tokenRows[0]?.value?.trim();
+    if (!token) {
+      await ctx.answerCallbackQuery("No ngrok token configured");
+      await ctx.reply("No ngrok auth token configured. Add NGROK_AUTH_TOKEN in Settings first.");
+      return;
+    }
+    await sql`INSERT INTO settings (key, value) VALUES ('TUNNEL_ENABLED', 'true') ON CONFLICT (key) DO UPDATE SET value = 'true'`;
+    await ctx.answerCallbackQuery("Enabling tunnel...");
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    await ctx.reply("Public URL enabled. Restarting...");
+    setTimeout(() => process.exit(0), 500);
+  } else if (data === "tunnel:off") {
+    await sql`INSERT INTO settings (key, value) VALUES ('TUNNEL_ENABLED', 'false') ON CONFLICT (key) DO UPDATE SET value = 'false'`;
+    await ctx.answerCallbackQuery("Disabling tunnel...");
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    await ctx.reply("Public URL disabled. Restarting...");
+    setTimeout(() => process.exit(0), 500);
   }
 });
 
@@ -605,49 +624,40 @@ bot.command("restart", async (ctx) => {
   setTimeout(() => process.exit(0), 500);
 });
 
-bot.command("tunnel", async (ctx) => {
-  const arg = ctx.message?.text?.split(" ")[1]?.toLowerCase();
-
-  const getNgrokUrl = async (): Promise<string | null> => {
+const getTunnelStatus = async (): Promise<{ enabled: boolean; url: string | null }> => {
+  const rows = await sql`SELECT value FROM settings WHERE key = 'TUNNEL_ENABLED'`;
+  const enabled = rows[0]?.value === "true";
+  let url: string | null = null;
+  if (enabled) {
     try {
-      const res = await fetch("http://localhost:4040/api/tunnels");
+      const res = await fetch("http://localhost:4040/api/tunnels", { signal: AbortSignal.timeout(2000) });
       const data = (await res.json()) as { tunnels?: Array<{ proto: string; public_url: string }> };
-      return data.tunnels?.find((t) => t.proto === "https")?.public_url ?? null;
+      url = data.tunnels?.find((t) => t.proto === "https")?.public_url ?? null;
     } catch {
-      return null;
+      // ngrok not running yet
     }
-  };
-
-  if (!arg || arg === "status") {
-    const url = await getNgrokUrl();
-    if (url) {
-      await ctx.reply(`Remote access is ON\n${url}`);
-    } else {
-      await ctx.reply("Remote access is OFF — dashboard is only accessible locally.");
-    }
-    return;
   }
+  return { enabled, url };
+};
 
-  if (arg === "on") {
-    const token = process.env.NGROK_AUTH_TOKEN;
-    if (!token) {
-      await ctx.reply("No ngrok auth token configured. Add NGROK_AUTH_TOKEN in Settings first.");
-      return;
-    }
-    await sql`INSERT INTO settings (key, value) VALUES ('TUNNEL_ENABLED', 'true') ON CONFLICT (key) DO UPDATE SET value = 'true'`;
-    await ctx.reply("Tunnel enabled. Restarting now...");
-    setTimeout(() => process.exit(0), 500);
-    return;
+const sendTunnelStatus = async (ctx: Context) => {
+  const { enabled, url } = await getTunnelStatus();
+  let statusText: string;
+  if (enabled && url) {
+    statusText = `Public URL is ON\n${url}`;
+  } else if (enabled) {
+    statusText = "Public URL is ON (ngrok starting up...)";
+  } else {
+    statusText = "Public URL is OFF — dashboard is only accessible locally.";
   }
+  const keyboard = new InlineKeyboard()
+    .text("Enable", "tunnel:on")
+    .text("Disable", "tunnel:off");
+  await ctx.reply(statusText, { reply_markup: keyboard });
+};
 
-  if (arg === "off") {
-    await sql`INSERT INTO settings (key, value) VALUES ('TUNNEL_ENABLED', 'false') ON CONFLICT (key) DO UPDATE SET value = 'false'`;
-    await ctx.reply("Tunnel disabled. Restarting now...");
-    setTimeout(() => process.exit(0), 500);
-    return;
-  }
-
-  await ctx.reply("Usage: /tunnel [on|off|status]");
+bot.command("tunnel", async (ctx) => {
+  await sendTunnelStatus(ctx);
 });
 
 bot.command("memory", async (ctx) => {
