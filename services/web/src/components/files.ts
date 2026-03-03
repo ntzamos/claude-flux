@@ -81,7 +81,8 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
 
   // Back row
   const backRow = safePath ? `
-    <tr style="cursor:pointer;opacity:0.75" onclick="window.location='${parentUrl}'">
+    <tr style="cursor:pointer;opacity:0.75" onclick="window.location='${parentUrl}'"
+        ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'${esc(parentPath ?? '')}')">
       <td colspan="4">
         <div style="display:flex;align-items:center;gap:0.5rem;color:var(--accent)">
           <span>↩</span><span>.. up</span>
@@ -98,7 +99,9 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
       month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
     });
     return `
-    <tr style="cursor:pointer" onclick="window.location='/dashboard?tab=files&path=${encPath}'">
+    <tr style="cursor:pointer" draggable="true" ondragstart="onDragStart(event,'${esc(fullPath)}')"
+        ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'${esc(fullPath)}')"
+        onclick="window.location='/dashboard?tab=files&path=${encPath}'">
       <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
         <div style="display:flex;align-items:center;gap:0.5rem">
           <span style="font-size:1.1rem;flex-shrink:0">📁</span>
@@ -108,7 +111,8 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
       <td style="white-space:nowrap;color:var(--muted)">—</td>
       <td style="white-space:nowrap;color:var(--muted)">${dateFmt}</td>
       <td style="white-space:nowrap" onclick="event.stopPropagation()">
-        <button class="btn btn-outline btn-sm" onclick="openRename('${esc(fullPath)}','${esc(d.name)}','${esc(safePath)}')">Rename</button>
+        <button class="btn btn-outline btn-sm" onclick="openMove('${esc(fullPath)}','${esc(d.name)}')">Move</button>
+        <button class="btn btn-outline btn-sm" style="margin-left:0.35rem" onclick="openRename('${esc(fullPath)}','${esc(d.name)}','${esc(safePath)}')">Rename</button>
         <form method="POST" action="/api/files/rmdir" style="display:inline;margin-left:0.35rem"
               onsubmit="return confirm('Delete folder ${nameEsc} and all its contents?')">
           <input type="hidden" name="path" value="${esc(fullPath)}">
@@ -137,7 +141,8 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
     fileSizeData[fullPath] = sizeStr;
 
     return `
-    <tr style="cursor:pointer" data-fullpath="${esc(fullPath)}" data-url="${esc(serveUrl)}"
+    <tr style="cursor:pointer" draggable="true" ondragstart="onDragStart(event,'${esc(fullPath)}')"
+        data-fullpath="${esc(fullPath)}" data-url="${esc(serveUrl)}"
         onclick="previewFile(this.dataset.fullpath, this.dataset.url)">
       <td style="white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis">
         <div style="display:flex;align-items:center;gap:0.5rem;overflow:hidden">
@@ -149,6 +154,7 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
       <td style="white-space:nowrap;color:var(--muted)">${dateFmt}</td>
       <td style="white-space:nowrap" onclick="event.stopPropagation()">
         <a href="${esc(serveUrl)}" download class="btn btn-outline btn-sm" style="text-decoration:none">Download</a>
+        <button class="btn btn-outline btn-sm" style="margin-left:0.35rem" onclick="openMove('${esc(fullPath)}','${esc(f.name)}')">Move</button>
         <button class="btn btn-outline btn-sm" style="margin-left:0.35rem" onclick="openRename('${esc(fullPath)}','${esc(f.name)}','${esc(safePath)}')">Rename</button>
         <form method="POST" action="/api/files/delete" style="display:inline;margin-left:0.35rem"
               onsubmit="return confirm('Delete ${nameEsc}?')">
@@ -190,6 +196,19 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
     </div>
     <div id="preview-content"
          style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:1.5rem;min-height:0">
+    </div>
+  </div>
+
+  <!-- ── Move modal ───────────────────────────────────────── -->
+  <div id="move-modal"
+       style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:400;align-items:center;justify-content:center">
+    <div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:1.5rem;width:min(360px,92vw);box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+      <div style="font-weight:600;font-size:0.9rem;margin-bottom:0.25rem">Move to</div>
+      <div id="move-item-label" style="font-size:0.78rem;color:var(--muted);margin-bottom:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+      <div id="move-options" style="display:flex;flex-direction:column;gap:0.35rem;max-height:280px;overflow-y:auto;margin-bottom:1rem"></div>
+      <div style="display:flex;justify-content:flex-end">
+        <button onclick="closeMove()" class="btn btn-outline btn-sm">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -286,6 +305,12 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
     }
     .preview-unavailable .big-icon { font-size: 4rem; }
     #new-folder-form.visible { display: flex; }
+    tr.drop-target > td { background: var(--accent-glow) !important; }
+    .move-opt {
+      padding: 0.5rem 0.75rem; border-radius: 6px; cursor: pointer;
+      font-size: 0.85rem; border: 1px solid var(--border2);
+    }
+    .move-opt:hover { background: var(--accent-glow); }
   </style>
 
   <script>
@@ -414,7 +439,75 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
   }
 
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closePreview(); closeRename(); }
+    if (e.key === 'Escape') { closePreview(); closeRename(); closeMove(); }
   });
+
+  // ── Move ────────────────────────────────────────────────
+  const MOVE_DIRS = ${JSON.stringify(dirs.map(d => ({ name: d.name, path: safePath ? `${safePath}/${d.name}` : d.name })))};
+  const MOVE_PARENT = ${JSON.stringify(parentPath)};
+  let _moveItemPath = null;
+  let _dragPath = null;
+
+  function openMove(itemPath, itemName) {
+    _moveItemPath = itemPath;
+    document.getElementById('move-item-label').textContent = itemName;
+    const opts = document.getElementById('move-options');
+    const rows = [];
+    if (MOVE_PARENT !== null) {
+      const label = MOVE_PARENT ? (MOVE_PARENT.split('/').pop() + '/') : 'Files (root)';
+      rows.push('<div class="move-opt" onclick="doMove(_moveItemPath,' + JSON.stringify(MOVE_PARENT ?? '') + ')">↩ ' + esc(label) + '</div>');
+    }
+    for (const dir of MOVE_DIRS) {
+      if (dir.path === itemPath) continue;
+      rows.push('<div class="move-opt" onclick="doMove(_moveItemPath,' + JSON.stringify(dir.path) + ')">📁 ' + esc(dir.name) + '/</div>');
+    }
+    opts.innerHTML = rows.length ? rows.join('') : '<div style="color:var(--muted);font-size:0.82rem;padding:0.5rem 0">No folders to move to.</div>';
+    document.getElementById('move-modal').style.display = 'flex';
+  }
+
+  function closeMove() {
+    document.getElementById('move-modal').style.display = 'none';
+    _moveItemPath = null;
+  }
+
+  async function doMove(sourcePath, destFolder) {
+    closeMove();
+    try {
+      const res = await fetch('/api/files/move', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourcePath, destFolder })
+      });
+      const data = await res.json();
+      if (data.ok) window.location.reload();
+      else alert(data.error || 'Move failed.');
+    } catch { alert('Move failed.'); }
+  }
+
+  // ── Drag-and-drop ────────────────────────────────────────
+  function onDragStart(e, path) {
+    _dragPath = path;
+    e.dataTransfer.effectAllowed = 'move';
+    e.stopPropagation();
+  }
+
+  function onDragOver(e) {
+    if (!_dragPath) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.classList.add('drop-target');
+    e.stopPropagation();
+  }
+
+  function onDragLeave(e) {
+    e.currentTarget.classList.remove('drop-target');
+  }
+
+  async function onDrop(e, destFolder) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drop-target');
+    if (!_dragPath) return;
+    const src = _dragPath; _dragPath = null;
+    await doMove(src, destFolder);
+  }
   </script>`;
 }

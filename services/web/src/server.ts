@@ -668,6 +668,37 @@ const server = Bun.serve({
       }
     }
 
+    // Move a file or folder (JSON body: sourcePath, destFolder)
+    if (pathname === "/api/files/move" && req.method === "POST") {
+      let body: any;
+      try { body = await req.json(); } catch { body = {}; }
+      const sourcePath = (body.sourcePath ?? "") as string;
+      const destFolder = (body.destFolder ?? "") as string;
+      const srcParts   = sourcePath.split("/").filter(Boolean);
+      const dstParts   = destFolder.split("/").filter(Boolean);
+      if (srcParts.some(p => p === "..") || srcParts.length === 0) {
+        return new Response(JSON.stringify({ error: "Invalid source path." }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      if (dstParts.some(p => p === "..")) {
+        return new Response(JSON.stringify({ error: "Invalid destination." }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      const name     = srcParts.at(-1)!;
+      const destPath = dstParts.length > 0 ? `${dstParts.join("/")}/${name}` : name;
+      if (srcParts.join("/") === destPath) {
+        return new Response(JSON.stringify({ error: "Already in that location." }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      if (destPath.startsWith(srcParts.join("/") + "/")) {
+        return new Response(JSON.stringify({ error: "Cannot move a folder into itself." }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      try {
+        const { rename: renameFn } = await import("fs/promises");
+        await renameFn(`/files/${srcParts.join("/")}`, `/files/${destPath}`);
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
     // Legacy single-file delete route (kept for compatibility)
     const fileDeleteMatch = pathname.match(/^\/api\/files\/([^/]+)\/delete$/);
     if (fileDeleteMatch && req.method === "POST") {
