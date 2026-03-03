@@ -127,7 +127,7 @@ via the web UI at `http://localhost` and stored in the database.
 ## Voice Messages
 
 whisper.cpp is compiled into the relay image. On first start, the entrypoint automatically
-downloads `ggml-base.en.bin` (~141 MB) if no model is found in `whisper-models/`.
+downloads `ggml-base.bin` (~142 MB, multilingual) if no model is found in `whisper-models/`.
 
 To use a different model, drop any whisper `.bin` file into `whisper-models/` before starting —
 the relay picks it up automatically, no configuration needed.

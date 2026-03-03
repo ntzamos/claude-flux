@@ -978,8 +978,8 @@ bot.on("message:voice", async (ctx) => {
         await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
         await ctx.reply(
           "No whisper model found. Download one into the whisper-models/ folder:\n" +
-          "curl -L -o whisper-models/ggml-base.en.bin \\\n" +
-          "  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+          "curl -L -o whisper-models/ggml-base.bin \\\n" +
+          "  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
         );
         return;
       }

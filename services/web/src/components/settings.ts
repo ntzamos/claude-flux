@@ -18,7 +18,7 @@ export const FIELD_GROUPS = [
     title: "Voice Transcription",
     description: "Transcribe voice messages using whisper.cpp (built into the relay). Download a model file to whisper-models/ and set the path below.",
     fields: [
-      { key: "WHISPER_MODEL_PATH", label: "Whisper Model Path", type: "text", placeholder: "/whisper-models/ggml-base.en.bin", required: false },
+      { key: "WHISPER_MODEL_PATH", label: "Whisper Model Path", type: "text", placeholder: "/whisper-models/ggml-base.bin", required: false },
       { key: "WHISPER_BINARY",     label: "Whisper Binary",     type: "text", placeholder: "whisper-cpp",                     required: false },
     ],
   },

@@ -27,12 +27,12 @@ if [ -z "$WHISPER_MODEL" ]; then
   WHISPER_MODEL=$(find "$WHISPER_DIR" -name "*.bin" -type f 2>/dev/null | head -1)
 fi
 if [ -z "$WHISPER_MODEL" ]; then
-  echo "[init] No whisper model found — downloading ggml-base.en.bin (~141 MB)..."
+  echo "[init] No whisper model found — downloading ggml-base.bin (~142 MB)..."
   mkdir -p "$WHISPER_DIR"
-  if curl -fsSL -o "$WHISPER_DIR/ggml-base.en.bin" \
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"; then
+  if curl -fsSL -o "$WHISPER_DIR/ggml-base.bin" \
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"; then
     echo "[init] Whisper model downloaded."
-    WHISPER_MODEL="$WHISPER_DIR/ggml-base.en.bin"
+    WHISPER_MODEL="$WHISPER_DIR/ggml-base.bin"
   else
     echo "[init] WARNING: Failed to download whisper model. Voice transcription will be unavailable."
   fi
