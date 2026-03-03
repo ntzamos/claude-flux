@@ -465,11 +465,11 @@ const server = Bun.serve({
       const offset = (page - 1) * size;
       try {
         if (since !== null) {
-          const sinceId = parseInt(since, 10) || 0;
+          const sinceDate = new Date(since);
           const data = await sql`
             SELECT id, created_at, role, content, channel
             FROM messages
-            WHERE id > ${sinceId}
+            WHERE created_at > ${sinceDate}
             ORDER BY created_at ASC
             LIMIT 100
           `;

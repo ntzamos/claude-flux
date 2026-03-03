@@ -28,8 +28,10 @@ export async function renderChat(page = 1): Promise<string> {
   // Reverse to show oldest-first in the viewport (newest loaded via DESC, displayed reversed)
   const reversed = [...(messages || [])].reverse();
 
-  // Track the max id for client-side polling
-  const maxId = messages.length > 0 ? messages[0].id : 0;
+  // Track the newest created_at for client-side polling
+  const lastTs = messages.length > 0
+    ? new Date(messages[0].created_at).toISOString()
+    : new Date(0).toISOString();
 
   const bubbles = reversed.map(m => {
     const isUser = m.role === "user";
@@ -116,8 +118,8 @@ export async function renderChat(page = 1): Promise<string> {
   const list   = document.getElementById('messages-list');
   const anchor = document.getElementById('chat-anchor');
 
-  // Start polling from the last rendered message id
-  let lastMsgId = ${maxId};
+  // Start polling from the last rendered message timestamp
+  let lastMsgTime = ${JSON.stringify(lastTs)};
   let optimisticBubble = null;
 
   function makeBubble(m) {
@@ -137,7 +139,7 @@ export async function renderChat(page = 1): Promise<string> {
 
   async function pollMessages() {
     try {
-      const res = await fetch('/api/messages?since=' + lastMsgId);
+      const res = await fetch('/api/messages?since=' + encodeURIComponent(lastMsgTime));
       const data = await res.json();
       if (data.data && data.data.length > 0) {
         const wasAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
@@ -148,7 +150,7 @@ export async function renderChat(page = 1): Promise<string> {
         }
         for (const m of data.data) {
           list.insertBefore(makeBubble(m), anchor);
-          if (m.id > lastMsgId) lastMsgId = m.id;
+          if (m.created_at > lastMsgTime) lastMsgTime = m.created_at;
         }
         // Clear thinking status when Claude's reply arrives
         const hasAssistant = data.data.some((m) => m.role === 'assistant');
