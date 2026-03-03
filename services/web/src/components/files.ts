@@ -383,10 +383,12 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
   function toggleNewFolder() {
     const form = document.getElementById('new-folder-form');
     const btn  = document.getElementById('new-folder-btn');
-    if (form.classList.toggle('visible')) {
+    if (form.style.display === 'none' || form.style.display === '') {
+      form.style.display = 'flex';
       btn.style.display = 'none';
       form.querySelector('input[name="name"]').focus();
     } else {
+      form.style.display = 'none';
       btn.style.display = '';
       form.querySelector('input[name="name"]').value = '';
     }
