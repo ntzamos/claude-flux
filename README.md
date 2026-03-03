@@ -32,6 +32,25 @@ If Claude Flux helps you, consider giving it a star to support the project!
 
 ---
 
+## Claude Flux vs OpenClaw
+
+| Feature | Claude Flux | OpenClaw |
+|---------|:-----------:|:--------:|
+| AI model | Claude (Anthropic) | GPT-4 (OpenAI) |
+| Full code execution | ✅ Claude Code CLI | ❌ |
+| Self-hosted | ✅ | ✅ |
+| Voice transcription | ✅ Local via whisper.cpp (free) | ❌ Cloud API only |
+| Persistent memory | ✅ Semantic search with pgvector | ❌ Session only |
+| Web dashboard | ✅ | ❌ |
+| Scheduled tasks | ✅ | ❌ |
+| Human-in-the-loop confirmations | ✅ | ❌ |
+| Image generation | ✅ DALL-E / Gemini | ❌ |
+| Voice replies | ✅ ElevenLabs (optional) | ❌ |
+| Setup | ✅ 3 commands + guided wizard | ⚠️ Manual config |
+| Self-upgrading bot | ✅ (via fork) | ❌ |
+
+---
+
 ## Requirements
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker + Compose)
