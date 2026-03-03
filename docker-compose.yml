@@ -63,6 +63,8 @@ services:
       - relay-files:/files
       # Whisper model files (auto-downloaded on first run, persisted across rebuilds)
       - ./whisper-models:/whisper-models
+      # Landing page (bind-mounted so changes take effect without a rebuild)
+      - ./docs:/home/relay/app/docs:ro
 
 volumes:
   db-data:
