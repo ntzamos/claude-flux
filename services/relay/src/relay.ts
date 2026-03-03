@@ -1357,17 +1357,28 @@ function buildPrompt(
     parts.push(
       "\nDEFECT DETECTION TASK:" +
       `\nImage: ${imgPath}` +
-      "\nUsing Bun + canvas (/home/relay/app/services/relay/node_modules/canvas/index.js):" +
-      "\n1. Load the image, get dimensions." +
-      "\n2. Analyze only what is visible in this photo — do not speculate about sides not shown. If multiple photos are provided, analyze each one separately." +
-      "\n3. Systematically inspect every visible part: screen, back panel, each individual camera lens, camera module glass, frame, and corners. Do not skip any area." +
-      "\n4. For each camera lens visible, explicitly state whether it is intact, scratched, or cracked. A cracked lens is Grade D regardless of other condition." +
-      "\n5. List ALL defects found before assigning the grade. When in doubt on a camera lens, assume crack not scratch — cracks are asymmetric and branch, scratches are linear." +
-      "\n6. Draw a red bbox + label around each defect found. Add a 2.4x zoomed inset at bottom for the worst defect." +
-      "\n7. Save to /files/defect-annotated.jpg" +
-      "\n8. Run: bash /home/relay/app/actions/send_file_to_telegram.sh /files/defect-annotated.jpg" +
-      "\n9. Reply plain text: list each defect with location, then Grade A/B/C/D + one sentence reason." +
-      "\nGrading rules: A=like new (no defects), B=one or more light scratches, C=heavy/deep scratch or multiple scratches, D=at least one crack."
+      "\n" +
+      "\nSTEP 1 — VISUAL INSPECTION (do this first, in your head):" +
+      "\n- Analyze only what is visible in this photo. Do not speculate about sides not shown." +
+      "\n- Inspect systematically: screen, back panel, each individual camera lens, camera module glass, frame, corners." +
+      "\n- For each camera lens: explicitly decide — intact, scratched, or cracked. Cracks are asymmetric and branch; scratches are linear. When in doubt, assume crack." +
+      "\n- A cracked lens = Grade D regardless of anything else." +
+      "\n- List every defect with its pixel location (approximate x,y,w,h) before moving on." +
+      "\n" +
+      "\nSTEP 2 — ANNOTATE THE IMAGE (mandatory — you must write and run this code):" +
+      "\nWrite a complete Bun script at /tmp/annotate.ts using canvas from /home/relay/app/services/relay/node_modules/canvas/index.js that:" +
+      "\n  a) Loads the image from the path above" +
+      "\n  b) For each defect found, draws a red rectangle (lineWidth=4) and a red label above it (font: bold 28px sans-serif, white text on red background)" +
+      "\n  c) For the worst defect, adds a 2.4x zoomed inset in the bottom-right corner with a yellow border" +
+      "\n  d) Saves the result as JPEG to /files/defect-annotated.jpg" +
+      "\nThen execute it: bun run /tmp/annotate.ts" +
+      "\n" +
+      "\nSTEP 3 — SEND THE ANNOTATED IMAGE:" +
+      "\nRun: bash /home/relay/app/actions/send_file_to_telegram.sh /files/defect-annotated.jpg" +
+      "\n" +
+      "\nSTEP 4 — TEXT REPLY:" +
+      "\nReply plain text only: list each defect with location, then Grade A/B/C/D + one sentence reason." +
+      "\nGrading: A=like new, B=one or more light scratches, C=heavy/deep or multiple scratches, D=at least one crack."
     );
     parts.push(`\nUser: [Image: ${imgPath}]\n\nRun the defect detection task above.`);
   } else {
