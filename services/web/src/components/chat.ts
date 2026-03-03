@@ -166,11 +166,8 @@ export async function renderChat(page = 1): Promise<string> {
     const btn    = document.getElementById('chat-send-btn');
     const status = document.getElementById('chat-status');
     const msg    = input.value.trim();
-    if (!msg || btn.disabled) return;
+    if (!msg) return;
 
-    btn.disabled = true;
-    btn.textContent = '...';
-    input.disabled  = true;
     input.value = '';
     input.style.height = 'auto';
     status.textContent = '';
@@ -192,9 +189,6 @@ export async function renderChat(page = 1): Promise<string> {
       status.style.color = 'var(--red)';
       status.textContent = 'Network error — is the relay running?';
     } finally {
-      btn.disabled    = false;
-      btn.textContent = 'Send';
-      input.disabled  = false;
       input.focus();
     }
   }
