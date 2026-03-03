@@ -2,6 +2,7 @@
 
 > Claude Code reads this file automatically. Walk the user through setup one phase at a time.
 > Ask for what you need, do everything yourself, confirm each step works before moving on.
+> When a relay restart is needed, always use `curl -s -X POST http://localhost:8080/restart` — never reference docker restart commands.
 
 ## How This Works
 
@@ -168,8 +169,8 @@ docker compose ps
 # View bot logs (live)
 docker compose logs bot -f
 
-# Restart the bot (also triggered automatically when settings are saved)
-docker compose restart bot
+# Restart the relay (also triggered automatically when settings are saved)
+curl -s -X POST http://localhost:8080/restart
 
 # Stop everything
 docker compose down
