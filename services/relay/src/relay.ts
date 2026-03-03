@@ -175,6 +175,7 @@ let session = await loadSession();
 
 let isActive = false;
 let pendingCount = 0;
+let pendingRestart = false;
 let processingChain: Promise<void> = Promise.resolve();
 
 function enqueue(fn: () => Promise<void>, queueId?: string): void {
@@ -186,8 +187,12 @@ function enqueue(fn: () => Promise<void>, queueId?: string): void {
     try {
       await fn();
       if (queueId) await updateQueueStatus(queueId, "done");
+    } catch (err) {
+      if (queueId) await updateQueueStatus(queueId, "failed");
+      throw err;
     } finally {
       isActive = false;
+      if (pendingRestart) process.exit(0);
     }
   });
 }
@@ -887,9 +892,18 @@ function buildFakeCtx(chatId: number): any {
 async function recoverPendingMessages(): Promise<void> {
   if (!process.env.DATABASE_URL) return;
   try {
+    // Reset any items stuck in 'processing' from a previous interrupted run.
+    // These were never completed and should not be retried — they may have
+    // triggered the restart themselves (e.g. Claude called /restart mid-task),
+    // and retrying them would cause an infinite restart loop.
+    await sql`
+      UPDATE message_queue SET status = 'failed', processed_at = NOW()
+      WHERE status = 'processing'
+    `;
+
     const rows = await sql`
       SELECT id, chat_id, payload FROM message_queue
-      WHERE status IN ('pending', 'processing')
+      WHERE status = 'pending'
       ORDER BY created_at ASC
     `;
     if (!rows.length) return;
@@ -1298,7 +1312,13 @@ Bun.serve({
 
     // Graceful restart — Docker will bring the container back up automatically
     if (req.method === "POST" && url.pathname === "/restart") {
-      setTimeout(() => process.exit(0), 300);
+      if (isActive) {
+        // Defer restart until the current message finishes processing,
+        // so the queue item gets marked done/failed before we exit.
+        pendingRestart = true;
+      } else {
+        setTimeout(() => process.exit(0), 300);
+      }
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "Content-Type": "application/json" },
       });
@@ -1504,6 +1524,7 @@ console.log(`Authorized user: ${ALLOWED_USER_ID || "ANY (not recommended)"}`);
 console.log(`Project directory: ${PROJECT_DIR || "(relay working directory)"}`);
 
 bot.start({
+  drop_pending_updates: true,
   onStart: async () => {
     console.log("Bot is running!");
     // Register commands in Telegram menu
