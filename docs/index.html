@@ -324,6 +324,30 @@
     .compare-table td.no   { color: var(--muted); }
     .compare-table td.warn { color: #f0c040; }
 
+    /* SECTION IMAGES */
+    .section-img {
+      display: block;
+      width: 100%;
+      max-width: 860px;
+      margin: 0 auto 3rem;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.45);
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+    }
+    .hero-img {
+      display: block;
+      width: 100%;
+      max-width: 900px;
+      margin: 2.5rem auto 0;
+      border-radius: 16px;
+      border: 1px solid rgba(0,230,118,0.18);
+      box-shadow: 0 0 60px rgba(0,230,118,0.08), 0 16px 48px rgba(0,0,0,0.6);
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+    }
+
     @media (max-width: 600px) {
       nav .nav-links { display: none; }
       .hero { padding: 5rem 1.25rem 3.5rem; }
@@ -359,6 +383,15 @@
   <p style="margin-top:2rem; font-size:0.9rem; color:var(--muted);">
     If Claude Flux helps you, consider giving it a ⭐ on <a href="https://github.com/ntzamos/claude-flux">GitHub</a> to support the project!
   </p>
+  <img
+    class="hero-img"
+    src="hero.jpg"
+    alt="Claude Flux — AI assistant living in Telegram, with Docker and circuit board aesthetics"
+    loading="lazy"
+    decoding="async"
+    width="900"
+    height="506"
+  />
 </section>
 
 <!-- QUICK START -->
@@ -380,6 +413,15 @@
 <section id="features">
   <p class="section-title">Everything you need, nothing you don't</p>
   <p class="section-desc">One Docker stack. Two services. Full personal AI assistant.</p>
+  <img
+    class="section-img"
+    src="features.jpg"
+    alt="Claude Flux features: chat interface, memory graph, scheduled tasks and web dashboard"
+    loading="lazy"
+    decoding="async"
+    width="860"
+    height="484"
+  />
   <div class="grid">
     <div class="card">
       <div class="card-icon">💬</div>
@@ -516,6 +558,15 @@
 <section id="how">
   <p class="section-title">How it works</p>
   <p class="section-desc">From zero to a working bot in under 10 minutes.</p>
+  <img
+    class="section-img"
+    src="setup.jpg"
+    alt="Claude Flux setup flow: git clone, Docker, onboarding wizard, Telegram"
+    loading="lazy"
+    decoding="async"
+    width="860"
+    height="484"
+  />
   <div class="steps">
     <div class="step">
       <div class="step-left">
