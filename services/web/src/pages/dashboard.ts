@@ -6,6 +6,7 @@ import { renderMemory } from "../components/memory.ts";
 import { renderFiles } from "../components/files.ts";
 import { renderCommands } from "../components/commands.ts";
 import { renderMcp } from "../components/mcp.ts";
+import { renderLists } from "../components/lists.ts";
 import { readdir } from "fs/promises";
 import { sql, getSettings } from "../db.ts";
 
@@ -121,7 +122,8 @@ export async function renderDashboard(
   tab: string,
   page: number,
   toast?: { type: "success" | "error"; text: string },
-  filePath?: string
+  filePath?: string,
+  listId?: string
 ): Promise<string> {
   const settings = await getSettings();
   let tabContent: string;
@@ -135,6 +137,9 @@ export async function renderDashboard(
       break;
     case "memory":
       tabContent = await renderMemory();
+      break;
+    case "lists":
+      tabContent = await renderLists(listId);
       break;
     case "files":
       tabContent = await renderFiles(filePath ?? "");

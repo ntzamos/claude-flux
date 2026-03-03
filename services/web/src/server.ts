@@ -312,12 +312,13 @@ const server = Bun.serve({
       const tab      = url.searchParams.get("tab") || "status";
       const page     = parseInt(url.searchParams.get("page") ?? "1", 10);
       const filePath = url.searchParams.get("path") ?? "";
+      const listId   = url.searchParams.get("lid") ?? undefined;
       const toastType = url.searchParams.get("toast");
       const toastMsg  = url.searchParams.get("msg");
       const toast = toastType && toastMsg
         ? { type: toastType as "success" | "error", text: decodeURIComponent(toastMsg) }
         : undefined;
-      return html(await renderDashboard(tab, page, toast, filePath));
+      return html(await renderDashboard(tab, page, toast, filePath, listId));
     }
 
     // ── Save theme (no relay restart needed) ─────────────────
@@ -871,6 +872,127 @@ const server = Bun.serve({
         return redirect(`/dashboard?tab=commands&toast=success&msg=${encodeURIComponent("Command deleted — relay restarting.")}`);
       } catch (err: any) {
         return redirect(`/dashboard?tab=commands&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    // ── Lists ─────────────────────────────────────────────────
+
+    if (pathname === "/api/lists" && req.method === "POST") {
+      const form = await req.formData();
+      const name        = (form.get("name") as string)?.trim();
+      const description = (form.get("description") as string)?.trim() || null;
+      if (!name) {
+        return redirect(`/dashboard?tab=lists&toast=error&msg=${encodeURIComponent("Name is required.")}`);
+      }
+      try {
+        const [row] = await sql`
+          INSERT INTO lists (name, description) VALUES (${name}, ${description}) RETURNING id
+        `;
+        return redirect(`/dashboard?tab=lists&lid=${row.id}&toast=success&msg=${encodeURIComponent("List created.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=lists&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    const listEditMatch = pathname.match(/^\/api\/lists\/([^/]+)\/edit$/);
+    if (listEditMatch && req.method === "POST") {
+      const id   = listEditMatch[1];
+      const form = await req.formData();
+      const name        = (form.get("name") as string)?.trim();
+      const description = (form.get("description") as string)?.trim() || null;
+      if (!name) {
+        return redirect(`/dashboard?tab=lists&lid=${id}&toast=error&msg=${encodeURIComponent("Name is required.")}`);
+      }
+      try {
+        await sql`UPDATE lists SET name=${name}, description=${description}, updated_at=NOW() WHERE id=${id}`;
+        return redirect(`/dashboard?tab=lists&lid=${id}&toast=success&msg=${encodeURIComponent("List updated.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=lists&lid=${id}&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    const listDeleteMatch = pathname.match(/^\/api\/lists\/([^/]+)\/delete$/);
+    if (listDeleteMatch && req.method === "POST") {
+      const id = listDeleteMatch[1];
+      try {
+        await sql`DELETE FROM lists WHERE id=${id}`;
+        return redirect(`/dashboard?tab=lists&toast=success&msg=${encodeURIComponent("List deleted.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=lists&lid=${id}&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    const listItemsMatch = pathname.match(/^\/api\/lists\/([^/]+)\/items$/);
+    if (listItemsMatch && req.method === "POST") {
+      const listId = listItemsMatch[1];
+      const form   = await req.formData();
+      const title       = (form.get("title") as string)?.trim();
+      const description = (form.get("description") as string)?.trim() || null;
+      const deadline    = (form.get("deadline") as string)?.trim() || null;
+      if (!title) {
+        return redirect(`/dashboard?tab=lists&lid=${listId}&toast=error&msg=${encodeURIComponent("Title is required.")}`);
+      }
+      try {
+        await sql`
+          INSERT INTO list_items (list_id, title, description, deadline)
+          VALUES (${listId}, ${title}, ${description}, ${deadline})
+        `;
+        return redirect(`/dashboard?tab=lists&lid=${listId}&toast=success&msg=${encodeURIComponent("Item added.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=lists&lid=${listId}&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    const itemEditMatch = pathname.match(/^\/api\/list-items\/([^/]+)\/edit$/);
+    if (itemEditMatch && req.method === "POST") {
+      const id   = itemEditMatch[1];
+      const form = await req.formData();
+      const title       = (form.get("title") as string)?.trim();
+      const description = (form.get("description") as string)?.trim() || null;
+      const deadline    = (form.get("deadline") as string)?.trim() || null;
+      if (!title) {
+        return redirect(`/dashboard?tab=lists&toast=error&msg=${encodeURIComponent("Title is required.")}`);
+      }
+      try {
+        const [item] = await sql`
+          UPDATE list_items SET title=${title}, description=${description}, deadline=${deadline}, updated_at=NOW()
+          WHERE id=${id} RETURNING list_id
+        `;
+        return redirect(`/dashboard?tab=lists&lid=${item.list_id}&toast=success&msg=${encodeURIComponent("Item updated.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=lists&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    const itemDeleteMatch = pathname.match(/^\/api\/list-items\/([^/]+)\/delete$/);
+    if (itemDeleteMatch && req.method === "POST") {
+      const id   = itemDeleteMatch[1];
+      const form = await req.formData();
+      const listId = (form.get("list_id") as string)?.trim();
+      try {
+        await sql`DELETE FROM list_items WHERE id=${id}`;
+        return redirect(`/dashboard?tab=lists${listId ? "&lid=" + listId : ""}&toast=success&msg=${encodeURIComponent("Item deleted.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=lists${listId ? "&lid=" + listId : ""}&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    const itemToggleMatch = pathname.match(/^\/api\/list-items\/([^/]+)\/toggle$/);
+    if (itemToggleMatch && req.method === "POST") {
+      const id   = itemToggleMatch[1];
+      const form = await req.formData();
+      const listId = (form.get("list_id") as string)?.trim();
+      try {
+        await sql`
+          UPDATE list_items
+          SET completed    = NOT completed,
+              completed_at = CASE WHEN NOT completed THEN NOW() ELSE NULL END,
+              updated_at   = NOW()
+          WHERE id = ${id}
+        `;
+        return redirect(`/dashboard?tab=lists${listId ? "&lid=" + listId : ""}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=lists${listId ? "&lid=" + listId : ""}&toast=error&msg=${encodeURIComponent(err.message)}`);
       }
     }
 
