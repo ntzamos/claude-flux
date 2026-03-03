@@ -393,8 +393,8 @@ export function layout(title: string, content: string, activeTab?: string, theme
       .btn-sm { padding: 0.38rem 0.8rem; }
     }
     @media (max-width: 480px) {
-      .tab-link .tab-label { display: none; }
-      .tab-link { padding: 0.6rem 0.75rem; font-size: 0.9rem; }
+      .tab-link { padding: 0.5rem 0.6rem; font-size: 0.6rem; flex-direction: column; align-items: center; gap: 0.15rem; display: inline-flex; }
+      .tab-link .tab-label { display: inline; font-size: 0.55rem; }
     }
   </style>
 </head>
