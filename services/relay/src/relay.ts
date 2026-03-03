@@ -250,12 +250,42 @@ process.on("SIGTERM", async () => {
 // ============================================================
 
 if (!BOT_TOKEN) {
-  console.error("TELEGRAM_BOT_TOKEN not set!");
-  console.log("\nTo set up:");
-  console.log("1. Message @BotFather on Telegram");
-  console.log("2. Create a new bot with /newbot");
-  console.log("3. Copy the token to .env");
-  process.exit(1);
+  console.error("TELEGRAM_BOT_TOKEN not set! Open http://localhost to configure via the web dashboard.");
+
+  // Start a minimal HTTP server so the web dashboard can trigger a restart
+  // after the user saves their settings via the onboarding wizard.
+  Bun.serve({
+    port: 8080,
+    fetch(req: Request) {
+      const url = new URL(req.url);
+      if (req.method === "POST" && url.pathname === "/restart") {
+        setTimeout(() => process.exit(0), 300);
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      // Status endpoint — dashboard uses this
+      return new Response(JSON.stringify({ active: false, queue: 0 }), {
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      });
+    },
+  });
+
+  // Poll the DB every 10 s — exit cleanly when the token appears so
+  // Docker restarts the container and the relay picks it up from DB.
+  setInterval(async () => {
+    try {
+      await loadSettings();
+      if (process.env.TELEGRAM_BOT_TOKEN) {
+        console.log("[config] TELEGRAM_BOT_TOKEN found — restarting relay...");
+        process.exit(0);
+      }
+    } catch { /* ignore DB errors during poll */ }
+  }, 10000);
+
+  // Block top-level execution so bot initialisation below never runs.
+  // The Bun.serve + setInterval above keep the event loop alive.
+  await new Promise(() => {});
 }
 
 // Create directories
