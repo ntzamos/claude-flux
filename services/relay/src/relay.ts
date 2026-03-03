@@ -699,6 +699,7 @@ const BOT_COMMANDS = [
   { command: "userinfo", description: "Your user info" },
   { command: "restart", description: "Restart the bot" },
   { command: "tunnel", description: "Enable/disable remote dashboard access (/tunnel on|off|status)" },
+  { command: "detect", description: "Detect defects in an image — send as caption with a photo" },
 ];
 
 bot.command("start", async (ctx) => {
@@ -1164,7 +1165,18 @@ bot.on("message:photo", async (ctx) => {
       await writeFile(filePath, Buffer.from(buffer));
 
       // Claude Code can see images via file path
-      const caption = ctx.message.caption || "Analyze this image.";
+      const rawCaption = ctx.message.caption || "";
+      const isDetect = rawCaption.trim().toLowerCase().startsWith("/detect");
+      const caption = isDetect
+        ? `Analyze this image for defects. Use code (Bun + canvas from /home/relay/app/services/relay/node_modules/canvas/index.js) to:
+1. Load the image from ${filePath}
+2. Identify the exact defect location precisely — do not guess
+3. Draw a red bounding box around the defect with a label
+4. Add a zoomed inset (2.4×) of the defect region at the bottom
+5. Save the annotated result to /files/defect-annotated.jpg
+Then send the file via: bash /home/relay/app/actions/send_file_to_telegram.sh /files/defect-annotated.jpg
+Finally, reply with plain text (no markdown): defect type, exact location description, and Grade A/B/C/D with one sentence justification.`
+        : rawCaption || "Analyze this image.";
       const prompt = `[Image: ${filePath}]\n\n${caption}`;
 
       const [memoryContext, recentHistory] = await Promise.all([
