@@ -418,6 +418,17 @@ const server = Bun.serve({
       }
     }
 
+    const taskRunMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/run$/);
+    if (taskRunMatch && req.method === "POST") {
+      const id = taskRunMatch[1];
+      try {
+        await sql`UPDATE scheduled_tasks SET next_run_at = NOW() WHERE id = ${id} AND status = 'active'`;
+        return redirect(`/dashboard?tab=tasks&toast=success&msg=${encodeURIComponent("Task queued to run now.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=tasks&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
     const taskDeleteMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/delete$/);
     if (taskDeleteMatch && req.method === "POST") {
       const id = taskDeleteMatch[1];

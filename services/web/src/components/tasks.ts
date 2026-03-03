@@ -69,6 +69,9 @@ export async function renderTasks(): Promise<string> {
           <input type="hidden" name="status" value="${toggleStatus}">
           <button class="btn btn-outline btn-sm">${toggleLabel}</button>
         </form>
+        <form method="POST" action="/api/tasks/${t.id}/run" style="display:inline;margin-left:0.35rem">
+          <button class="btn btn-outline btn-sm">Run</button>
+        </form>
         <form method="POST" action="/api/tasks/${t.id}/delete" style="display:inline;margin-left:0.35rem"
               onsubmit="return confirm('Delete this task?')">
           <button class="btn btn-sm" style="background:rgba(255,82,82,0.12);color:#ff7070;border:1px solid rgba(255,82,82,0.25)">Delete</button>
