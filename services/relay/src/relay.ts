@@ -575,6 +575,7 @@ bot.catch((err) => {
 // ============================================================
 
 const BOT_COMMANDS = [
+  { command: "start", description: "Welcome message and quick-start guide" },
   { command: "help", description: "Show all available commands" },
   { command: "callme", description: "Start an AI phone call (e.g. /callme check in on my goals)" },
   { command: "tasks", description: "List scheduled tasks" },
@@ -586,6 +587,26 @@ const BOT_COMMANDS = [
   { command: "restart", description: "Restart the bot" },
   { command: "tunnel", description: "Enable/disable remote dashboard access (/tunnel on|off|status)" },
 ];
+
+bot.command("start", async (ctx) => {
+  const name = ctx.from?.first_name || "there";
+  const msg = [
+    `Hey ${name} 👋 I'm your personal AI assistant, powered by Claude.`,
+    "",
+    "Here's what I can do for you:",
+    "",
+    "🧠 Answer questions, brainstorm ideas, write and review code",
+    "📋 Remember facts, goals, and preferences across conversations",
+    "⏰ Set reminders and schedule recurring tasks",
+    "📎 Analyse images and documents you send me",
+    "🎙 Transcribe voice messages",
+    "🌐 Browse the web, run code, and use connected tools",
+    "",
+    "Just send me a message to get started — no commands needed.",
+    "Use /help to see all available commands.",
+  ].join("\n");
+  await ctx.reply(msg);
+});
 
 bot.command("help", async (ctx) => {
   const lines = ["Commands:", ""];
