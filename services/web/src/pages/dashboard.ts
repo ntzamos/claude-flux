@@ -120,7 +120,8 @@ async function renderStatus(): Promise<string> {
 export async function renderDashboard(
   tab: string,
   page: number,
-  toast?: { type: "success" | "error"; text: string }
+  toast?: { type: "success" | "error"; text: string },
+  filePath?: string
 ): Promise<string> {
   const settings = await getSettings();
   let tabContent: string;
@@ -136,7 +137,7 @@ export async function renderDashboard(
       tabContent = await renderMemory();
       break;
     case "files":
-      tabContent = await renderFiles();
+      tabContent = await renderFiles(filePath ?? "");
       break;
     case "mcp":
       tabContent = await renderMcp();

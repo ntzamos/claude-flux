@@ -309,14 +309,15 @@ const server = Bun.serve({
     // ── Dashboard ────────────────────────────────────────────
     if (pathname === "/dashboard" && req.method === "GET") {
       saveWebHost(req);
-      const tab  = url.searchParams.get("tab") || "status";
-      const page = parseInt(url.searchParams.get("page") ?? "1", 10);
+      const tab      = url.searchParams.get("tab") || "status";
+      const page     = parseInt(url.searchParams.get("page") ?? "1", 10);
+      const filePath = url.searchParams.get("path") ?? "";
       const toastType = url.searchParams.get("toast");
       const toastMsg  = url.searchParams.get("msg");
       const toast = toastType && toastMsg
         ? { type: toastType as "success" | "error", text: decodeURIComponent(toastMsg) }
         : undefined;
-      return html(await renderDashboard(tab, page, toast));
+      return html(await renderDashboard(tab, page, toast, filePath));
     }
 
     // ── Save theme (no relay restart needed) ─────────────────
@@ -509,29 +510,90 @@ const server = Bun.serve({
 
     // ── Files ─────────────────────────────────────────────────
 
-    // Serve a generated file
-    const fileServeMatch = pathname.match(/^\/files\/([^/]+)$/);
-    if (fileServeMatch && req.method === "GET") {
-      const name = decodeURIComponent(fileServeMatch[1]);
-      if (name.includes("..") || name.includes("/")) {
+    // Serve a generated file (supports subdirectories)
+    if (pathname.startsWith("/files/") && req.method === "GET") {
+      const rawPath = pathname.slice("/files/".length);
+      const parts   = rawPath.split("/").map(p => decodeURIComponent(p));
+      if (parts.some(p => p === ".." || p === "")) {
         return new Response("Forbidden", { status: 403 });
       }
+      const filePath = parts.join("/");
       try {
         // @ts-ignore — Bun.file is available at runtime
-        const file = Bun.file(`/files/${name}`);
+        const file = Bun.file(`/files/${filePath}`);
         // @ts-ignore
         if (!await file.exists()) return new Response("Not found", { status: 404 });
+        const basename = parts[parts.length - 1];
         const disposition = req.headers.get("purpose") === "download"
-          ? `attachment; filename="${name}"`
-          : `inline; filename="${name}"`;
-        return new Response(file, {
-          headers: { "Content-Disposition": disposition },
-        });
+          ? `attachment; filename="${basename}"`
+          : `inline; filename="${basename}"`;
+        return new Response(file, { headers: { "Content-Disposition": disposition } });
       } catch {
         return new Response("Not found", { status: 404 });
       }
     }
 
+    // Delete a file (form field: path, parentPath)
+    if (pathname === "/api/files/delete" && req.method === "POST") {
+      const form = await req.formData();
+      const rawPath    = (form.get("path") as string) ?? "";
+      const parentPath = (form.get("parentPath") as string) ?? "";
+      const parts = rawPath.split("/").filter(Boolean);
+      if (parts.some(p => p === "..") || parts.length === 0) {
+        return redirect(`/dashboard?tab=files&path=${encodeURIComponent(parentPath)}&toast=error&msg=${encodeURIComponent("Invalid path.")}`);
+      }
+      try {
+        await unlink(`/files/${parts.join("/")}`);
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=success&msg=${encodeURIComponent("File deleted.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    // Create a folder (form field: name, parentPath)
+    if (pathname === "/api/files/mkdir" && req.method === "POST") {
+      const form = await req.formData();
+      const name       = ((form.get("name") as string) ?? "").trim();
+      const parentPath = (form.get("parentPath") as string) ?? "";
+      const parentParts = parentPath.split("/").filter(Boolean);
+      if (!name || name.includes("/") || name.includes("..") || name === ".") {
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=error&msg=${encodeURIComponent("Invalid folder name.")}`);
+      }
+      if (parentParts.some(p => p === "..")) {
+        return redirect(`/dashboard?tab=files&toast=error&msg=${encodeURIComponent("Invalid path.")}`);
+      }
+      const { mkdir: mkdirFn } = await import("fs/promises");
+      const fullPath = parentParts.length > 0
+        ? `/files/${parentParts.join("/")}/${name}`
+        : `/files/${name}`;
+      try {
+        await mkdirFn(fullPath, { recursive: true });
+        const newPath = parentParts.length > 0 ? `${parentParts.join("/")}/${name}` : name;
+        return redirect(`/dashboard?tab=files&path=${encodeURIComponent(newPath)}&toast=success&msg=${encodeURIComponent("Folder created.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    // Delete a folder recursively (form field: path, parentPath)
+    if (pathname === "/api/files/rmdir" && req.method === "POST") {
+      const form = await req.formData();
+      const rawPath    = (form.get("path") as string) ?? "";
+      const parentPath = (form.get("parentPath") as string) ?? "";
+      const parts = rawPath.split("/").filter(Boolean);
+      if (parts.some(p => p === "..") || parts.length === 0) {
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=error&msg=${encodeURIComponent("Invalid path.")}`);
+      }
+      const { rm: rmFn } = await import("fs/promises");
+      try {
+        await rmFn(`/files/${parts.join("/")}`, { recursive: true, force: true });
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=success&msg=${encodeURIComponent("Folder deleted.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    // Legacy single-file delete route (kept for compatibility)
     const fileDeleteMatch = pathname.match(/^\/api\/files\/([^/]+)\/delete$/);
     if (fileDeleteMatch && req.method === "POST") {
       const name = decodeURIComponent(fileDeleteMatch[1]);
