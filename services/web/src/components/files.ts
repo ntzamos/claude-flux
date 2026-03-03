@@ -108,7 +108,8 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
       <td style="white-space:nowrap;color:var(--muted)">—</td>
       <td style="white-space:nowrap;color:var(--muted)">${dateFmt}</td>
       <td style="white-space:nowrap" onclick="event.stopPropagation()">
-        <form method="POST" action="/api/files/rmdir" style="display:inline"
+        <button class="btn btn-outline btn-sm" onclick="openRename('${esc(fullPath)}','${esc(d.name)}','${esc(safePath)}')">Rename</button>
+        <form method="POST" action="/api/files/rmdir" style="display:inline;margin-left:0.35rem"
               onsubmit="return confirm('Delete folder ${nameEsc} and all its contents?')">
           <input type="hidden" name="path" value="${esc(fullPath)}">
           <input type="hidden" name="parentPath" value="${esc(safePath)}">
@@ -148,6 +149,7 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
       <td style="white-space:nowrap;color:var(--muted)">${dateFmt}</td>
       <td style="white-space:nowrap" onclick="event.stopPropagation()">
         <a href="${esc(serveUrl)}" download class="btn btn-outline btn-sm" style="text-decoration:none">Download</a>
+        <button class="btn btn-outline btn-sm" style="margin-left:0.35rem" onclick="openRename('${esc(fullPath)}','${esc(f.name)}','${esc(safePath)}')">Rename</button>
         <form method="POST" action="/api/files/delete" style="display:inline;margin-left:0.35rem"
               onsubmit="return confirm('Delete ${nameEsc}?')">
           <input type="hidden" name="path" value="${esc(fullPath)}">
@@ -188,6 +190,24 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
     </div>
     <div id="preview-content"
          style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:1.5rem;min-height:0">
+    </div>
+  </div>
+
+  <!-- ── Rename modal ─────────────────────────────────────── -->
+  <div id="rename-modal"
+       style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:400;align-items:center;justify-content:center">
+    <div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:1.5rem;width:min(420px,92vw);box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+      <div style="font-weight:600;font-size:0.9rem;margin-bottom:1rem">Rename</div>
+      <form id="rename-form" method="POST" action="/api/files/rename">
+        <input type="hidden" id="rename-old-path" name="oldPath">
+        <input type="hidden" id="rename-parent-path" name="parentPath">
+        <input type="text" id="rename-new-name" name="newName" class="input"
+               style="width:100%;font-size:0.88rem;margin-bottom:1rem" required>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem">
+          <button type="button" onclick="closeRename()" class="btn btn-outline btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-sm">Rename</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -376,6 +396,23 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closePreview(); });
+  function openRename(oldPath, currentName, parentPath) {
+    document.getElementById('rename-old-path').value    = oldPath;
+    document.getElementById('rename-parent-path').value = parentPath;
+    const input = document.getElementById('rename-new-name');
+    input.value = currentName;
+    const modal = document.getElementById('rename-modal');
+    modal.style.display = 'flex';
+    input.focus();
+    input.select();
+  }
+
+  function closeRename() {
+    document.getElementById('rename-modal').style.display = 'none';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closePreview(); closeRename(); }
+  });
   </script>`;
 }

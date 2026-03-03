@@ -593,6 +593,30 @@ const server = Bun.serve({
       }
     }
 
+    // Rename a file or folder (form fields: oldPath, newName, parentPath)
+    if (pathname === "/api/files/rename" && req.method === "POST") {
+      const form = await req.formData();
+      const oldPath    = (form.get("oldPath") as string) ?? "";
+      const newName    = ((form.get("newName") as string) ?? "").trim();
+      const parentPath = (form.get("parentPath") as string) ?? "";
+      const oldParts   = oldPath.split("/").filter(Boolean);
+      if (oldParts.some(p => p === "..") || oldParts.length === 0) {
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=error&msg=${encodeURIComponent("Invalid path.")}`);
+      }
+      if (!newName || newName.includes("/") || newName.includes("..") || newName === ".") {
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=error&msg=${encodeURIComponent("Invalid name.")}`);
+      }
+      const { rename: renameFn } = await import("fs/promises");
+      const dir     = oldParts.slice(0, -1).join("/");
+      const newPath = dir ? `${dir}/${newName}` : newName;
+      try {
+        await renameFn(`/files/${oldParts.join("/")}`, `/files/${newPath}`);
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=success&msg=${encodeURIComponent("Renamed successfully.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=files${parentPath ? "&path=" + encodeURIComponent(parentPath) : ""}&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
     // Legacy single-file delete route (kept for compatibility)
     const fileDeleteMatch = pathname.match(/^\/api\/files\/([^/]+)\/delete$/);
     if (fileDeleteMatch && req.method === "POST") {
