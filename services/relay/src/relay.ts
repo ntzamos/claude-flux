@@ -1121,11 +1121,15 @@ async function sendResponse(ctx: Context, response: string, thinkingMsgId?: numb
 
 async function checkStartupStatus(): Promise<string> {
   const lines: string[] = ["Bot started successfully! 🤖"];
-  // Read WEB_HOST fresh from DB — may have been updated by ngrok
+  // Only show dashboard URL if tunneling is enabled
   try {
-    const rows = await sql`SELECT value FROM settings WHERE key = 'WEB_HOST'`;
-    const webHost = rows[0]?.value;
-    if (webHost) lines.push(`Dashboard: ${webHost}`);
+    const [hostRows, tunnelRows] = await Promise.all([
+      sql`SELECT value FROM settings WHERE key = 'WEB_HOST'`,
+      sql`SELECT value FROM settings WHERE key = 'NGROK_ENABLED'`,
+    ]);
+    const webHost = hostRows[0]?.value;
+    const tunnelEnabled = tunnelRows[0]?.value === "true";
+    if (webHost && tunnelEnabled) lines.push(`Dashboard: ${webHost}`);
   } catch {
     if (process.env.WEB_HOST) lines.push(`Dashboard: ${process.env.WEB_HOST}`);
   }
