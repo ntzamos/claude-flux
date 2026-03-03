@@ -386,6 +386,19 @@ bot.use(async (ctx, next) => {
 // CORE: Call Claude CLI
 // ============================================================
 
+function cleanErrorDetail(detail: string): string {
+  // Strip raw HTML (e.g. Cloudflare challenge pages for 403 errors)
+  if (/<html|<!DOCTYPE/i.test(detail)) {
+    const m = detail.match(/(\d{3})/);
+    const code = m ? m[1] : "";
+    if (code === "403") return "Authentication failed (HTTP 403). The Anthropic API request was blocked.";
+    if (code === "429") return "Rate limited (HTTP 429). Too many requests — please wait a moment.";
+    if (code === "500" || code === "502" || code === "503") return `Server error (HTTP ${code}). The API is temporarily unavailable.`;
+    return code ? `API error (HTTP ${code})` : "API request was blocked by the server";
+  }
+  return detail.substring(0, 300).trim();
+}
+
 async function callClaude(
   prompt: string,
   options?: { resume?: boolean; imagePath?: string }
@@ -422,7 +435,7 @@ async function callClaude(
       const detail = stderr || output || `exit code ${exitCode}`;
       console.error("Claude error (stderr):", stderr);
       console.error("Claude error (stdout):", output);
-      return `Error: ${detail.trim()}`;
+      return `Error: ${cleanErrorDetail(detail.trim())}`;
     }
 
     // Extract session ID from output if present (for --resume)
@@ -447,6 +460,26 @@ async function callClaude(
 // ============================================================
 
 const pendingActions = new Map<string, { action: string; payload: string }>();
+const pendingRetries = new Map<string, { prompt: string; options: { resume?: boolean } }>();
+
+async function sendErrorWithRetry(
+  ctx: Context,
+  errorMsg: string,
+  prompt: string,
+  opts: { resume?: boolean },
+  thinkingMsgId?: number
+): Promise<void> {
+  if (thinkingMsgId) {
+    await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsgId).catch(() => {});
+  }
+  const key = Math.random().toString(36).substring(2, 10);
+  pendingRetries.set(key, { prompt, options: opts });
+  setTimeout(() => pendingRetries.delete(key), 10 * 60 * 1000);
+  const keyboard = new InlineKeyboard()
+    .text("Retry", `retry:${key}`)
+    .text("Restart bot", "error:restart");
+  await ctx.reply(`${errorMsg}\n\nWhat would you like to do?`, { reply_markup: keyboard });
+}
 
 function parseAskIntent(
   response: string
@@ -564,8 +597,12 @@ bot.on("callback_query:data", async (ctx) => {
     try {
       console.log("[relay] Running confirmed action:", pending.payload.substring(0, 80));
       const rawResult = await callClaude(pending.payload, { resume: true });
-      await saveMessage("assistant", rawResult);
-      await handleClaudeResponse(ctx, rawResult);
+      if (rawResult.startsWith("Error:")) {
+        await sendErrorWithRetry(ctx, rawResult, pending.payload, { resume: true });
+      } else {
+        await saveMessage("assistant", rawResult);
+        await handleClaudeResponse(ctx, rawResult);
+      }
     } catch (error) {
       console.error("[relay] Confirmed action failed:", error);
       await ctx.reply("Something went wrong running that action. Check the logs.");
@@ -598,6 +635,31 @@ bot.on("callback_query:data", async (ctx) => {
     await ctx.answerCallbackQuery("Disabling tunnel...");
     try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
     await ctx.reply("Public URL disabled. Restarting...");
+    setTimeout(() => process.exit(0), 500);
+  } else if (data.startsWith("retry:")) {
+    const key = data.replace("retry:", "");
+    const pending = pendingRetries.get(key);
+    if (!pending) {
+      await ctx.answerCallbackQuery("Retry expired");
+      return;
+    }
+    pendingRetries.delete(key);
+    await ctx.answerCallbackQuery("Retrying...");
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const thinkingMsg = await ctx.reply("Retrying...");
+    await ctx.replyWithChatAction("typing");
+    const rawResult = await callClaude(pending.prompt, pending.options);
+    if (rawResult.startsWith("Error:")) {
+      await sendErrorWithRetry(ctx, rawResult, pending.prompt, pending.options, thinkingMsg.message_id);
+    } else {
+      await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
+      await saveMessage("assistant", rawResult);
+      await handleClaudeResponse(ctx, rawResult);
+    }
+  } else if (data === "error:restart") {
+    await ctx.answerCallbackQuery("Restarting...");
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    await ctx.reply("Restarting bot...");
     setTimeout(() => process.exit(0), 500);
   }
 });
@@ -999,8 +1061,12 @@ bot.on("message:text", async (ctx) => {
     const enrichedPrompt = buildPrompt(text, relevantContext, memoryContext, recentHistory);
     const rawResponse = await callClaude(enrichedPrompt, { resume: true });
 
-    await saveMessage("assistant", rawResponse);
-    await handleClaudeResponse(ctx, rawResponse, { thinkingMsgId: thinkingMsg.message_id });
+    if (rawResponse.startsWith("Error:")) {
+      await sendErrorWithRetry(ctx, rawResponse, enrichedPrompt, { resume: true }, thinkingMsg.message_id);
+    } else {
+      await saveMessage("assistant", rawResponse);
+      await handleClaudeResponse(ctx, rawResponse, { thinkingMsgId: thinkingMsg.message_id });
+    }
   }, queueId ?? undefined);
 });
 
@@ -1564,7 +1630,7 @@ bot.start({
     // Replay any messages that were queued before the last restart
     recoverPendingMessages().catch((e) => console.error("[queue] Recovery error:", e));
     if (ALLOWED_USER_ID) {
-      // Delay 20s to let ngrok register its URL before we send the dashboard link
+      // Delay 3s to let ngrok register its URL before we send the dashboard link
       setTimeout(async () => {
         try {
           const status = await checkStartupStatus();
@@ -1572,7 +1638,7 @@ bot.start({
         } catch (err) {
           console.error("Startup message failed:", err);
         }
-      }, 20_000);
+      }, 3_000);
     }
   },
 });
