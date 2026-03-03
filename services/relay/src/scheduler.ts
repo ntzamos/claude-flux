@@ -146,6 +146,50 @@ async function main() {
   for (const task of tasks) {
     console.log(`[scheduler] Running: ${task.description}`);
 
+    // Claim the task immediately to prevent duplicate runs if Claude takes >1 min
+    try {
+      if (task.schedule_type === "once") {
+        const claimed = await sql`
+          UPDATE scheduled_tasks
+          SET status = 'running'
+          WHERE id = ${task.id} AND status = 'active'
+          RETURNING id
+        `;
+        if (!claimed.length) {
+          console.log(`[scheduler] Task ${task.id} already claimed — skipping`);
+          continue;
+        }
+      } else if (task.schedule_type === "interval" && task.interval_minutes) {
+        const next = new Date(now.getTime() + task.interval_minutes * 60 * 1000).toISOString();
+        const claimed = await sql`
+          UPDATE scheduled_tasks
+          SET next_run_at = ${next}
+          WHERE id = ${task.id} AND next_run_at = ${task.next_run_at}
+          RETURNING id
+        `;
+        if (!claimed.length) {
+          console.log(`[scheduler] Task ${task.id} already claimed — skipping`);
+          continue;
+        }
+      } else if (task.schedule_type === "daily") {
+        const prev = new Date(task.next_run_at);
+        const next = new Date(prev.getTime() + 24 * 60 * 60 * 1000).toISOString();
+        const claimed = await sql`
+          UPDATE scheduled_tasks
+          SET next_run_at = ${next}
+          WHERE id = ${task.id} AND next_run_at = ${task.next_run_at}
+          RETURNING id
+        `;
+        if (!claimed.length) {
+          console.log(`[scheduler] Task ${task.id} already claimed — skipping`);
+          continue;
+        }
+      }
+    } catch (err: any) {
+      console.error(`[scheduler] Claim error for ${task.id}:`, err.message);
+      continue;
+    }
+
     const timeStr = now.toLocaleString("en-US", {
       timeZone: USER_TIMEZONE,
       weekday: "long",
@@ -178,7 +222,7 @@ async function main() {
       console.error(`[scheduler] No output from Claude for task ${task.id}`);
     }
 
-    // Advance the task
+    // Finalize the task
     try {
       if (task.schedule_type === "once") {
         await sql`
@@ -186,24 +230,15 @@ async function main() {
           SET run_count = ${task.run_count + 1}, last_run_at = ${now.toISOString()}, status = 'done'
           WHERE id = ${task.id}
         `;
-      } else if (task.schedule_type === "interval" && task.interval_minutes) {
-        const next = new Date(now.getTime() + task.interval_minutes * 60 * 1000).toISOString();
+      } else {
         await sql`
           UPDATE scheduled_tasks
-          SET run_count = ${task.run_count + 1}, last_run_at = ${now.toISOString()}, next_run_at = ${next}
-          WHERE id = ${task.id}
-        `;
-      } else if (task.schedule_type === "daily") {
-        const prev = new Date(task.next_run_at);
-        const next = new Date(prev.getTime() + 24 * 60 * 60 * 1000).toISOString();
-        await sql`
-          UPDATE scheduled_tasks
-          SET run_count = ${task.run_count + 1}, last_run_at = ${now.toISOString()}, next_run_at = ${next}
+          SET run_count = ${task.run_count + 1}, last_run_at = ${now.toISOString()}
           WHERE id = ${task.id}
         `;
       }
     } catch (err: any) {
-      console.error(`[scheduler] Update error for ${task.id}:`, err.message);
+      console.error(`[scheduler] Finalize error for ${task.id}:`, err.message);
     }
   }
 
