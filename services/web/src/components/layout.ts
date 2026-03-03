@@ -397,6 +397,38 @@ export function layout(title: string, content: string, activeTab?: string, theme
   <div class="main">
     ${content}
   </div>
+  <!-- ── Claude Flux Activity Indicator ─────────────────────── -->
+  <div id="flux-indicator" style="
+    display:none;
+    position:fixed;
+    bottom:1.5rem;
+    left:50%;
+    transform:translateX(-50%);
+    background:var(--surface);
+    border:1px solid var(--border2);
+    border-radius:999px;
+    padding:0.45rem 1.1rem;
+    font-size:0.72rem;
+    font-weight:600;
+    color:var(--accent);
+    text-transform:uppercase;
+    letter-spacing:0.1em;
+    z-index:300;
+    box-shadow:0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px ${a(0.15)};
+    white-space:nowrap;
+    pointer-events:none;
+    gap:0.5rem;
+    align-items:center;
+  ">
+    <span id="flux-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent);animation:fluxPulse 1s ease-in-out infinite;flex-shrink:0"></span>
+    <span id="flux-label">Claude is thinking</span>
+  </div>
+  <style>
+    @keyframes fluxPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.75); }
+    }
+  </style>
   <script>
     // Scroll to top on every tab load (prevent browser scroll restoration)
     history.scrollRestoration = 'manual';
@@ -417,6 +449,32 @@ export function layout(title: string, content: string, activeTab?: string, theme
     if (tzInput && !tzInput.value) {
       tzInput.value = Intl.DateTimeFormat().resolvedOptions().timeZone;
     }
+    // ── Flux activity indicator polling ─────────────────────
+    (function() {
+      const el    = document.getElementById('flux-indicator');
+      const label = document.getElementById('flux-label');
+      if (!el || !label) return;
+      async function pollRelayStatus() {
+        try {
+          const res  = await fetch('/api/relay-status');
+          const data = await res.json();
+          if (data.active || data.queue > 0) {
+            el.style.display = 'flex';
+            if (data.queue > 0) {
+              label.textContent = data.active
+                ? 'Claude is thinking · ' + data.queue + ' queued'
+                : data.queue + ' message' + (data.queue > 1 ? 's' : '') + ' queued';
+            } else {
+              label.textContent = 'Claude is thinking';
+            }
+          } else {
+            el.style.display = 'none';
+          }
+        } catch { el.style.display = 'none'; }
+      }
+      pollRelayStatus();
+      setInterval(pollRelayStatus, 2000);
+    })();
   </script>
 </body>
 </html>`;

@@ -229,6 +229,7 @@ export async function renderTasks(): Promise<string> {
     const toggleStatus = t.status === 'active' ? 'done' : 'active';
     const toggleLabel  = t.status === 'active' ? 'Pause' : 'Resume';
     document.getElementById('detail-actions').innerHTML = \`
+      <button class="btn btn-outline btn-sm" onclick="showEditTask('\${t.id}')">Edit</button>
       <form method="POST" action="/api/tasks/\${t.id}/status" style="display:inline">
         <input type="hidden" name="status" value="\${toggleStatus}">
         <button class="btn btn-outline btn-sm">\${toggleLabel}</button>
@@ -240,6 +241,71 @@ export async function renderTasks(): Promise<string> {
     \`;
 
     document.getElementById('task-detail-modal').style.display = 'flex';
+  }
+
+  function showEditTask(id) {
+    const t = TASKS[id];
+    if (!t) return;
+    const esc = s => String(s ?? '').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    // Build "when" value for datetime-local from next_run_at
+    let whenLocal = '';
+    if (t.next_run_at) {
+      const d = new Date(t.next_run_at);
+      whenLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+
+    document.getElementById('detail-title').textContent = 'Edit Task';
+    document.getElementById('detail-body').innerHTML = \`
+      <form id="edit-task-form" method="POST" action="/api/tasks/\${esc(t.id)}/edit" onsubmit="convertEditDatetime(this)">
+        <input type="hidden" id="edit-when-hidden" name="when">
+        <div class="field">
+          <label>Description</label>
+          <input name="description" type="text" value="\${esc(t.description)}" required>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+          <div class="field">
+            <label>Type</label>
+            <select name="schedule_type" id="edit-type-select" onchange="toggleEditFields(this.value)">
+              <option value="once" \${t.schedule_type==='once'?'selected':''}>Once</option>
+              <option value="daily" \${t.schedule_type==='daily'?'selected':''}>Daily</option>
+              <option value="interval" \${t.schedule_type==='interval'?'selected':''}>Interval</option>
+            </select>
+          </div>
+          <div class="field" id="edit-when-field" style="\${t.schedule_type==='interval'?'display:none':''}">
+            <label>When</label>
+            <input id="edit-when-input" type="datetime-local" value="\${whenLocal}" style="color-scheme:dark">
+          </div>
+          <div class="field" id="edit-interval-field" style="\${t.schedule_type!=='interval'?'display:none':''}">
+            <label>Interval (minutes)</label>
+            <input name="interval_minutes" type="number" min="1" value="\${esc(t.interval_minutes ?? '')}">
+          </div>
+        </div>
+        <div class="field">
+          <label>Action prompt</label>
+          <textarea name="action_prompt" rows="4" required
+            style="width:100%;background:var(--bg);border:1px solid var(--border2);color:var(--text);border-radius:6px;padding:0.45rem 0.65rem;font-size:0.83rem;font-family:inherit;resize:vertical">\${esc(t.action_prompt)}</textarea>
+        </div>
+      </form>
+    \`;
+    document.getElementById('detail-actions').innerHTML = \`
+      <button type="button" class="btn btn-outline btn-sm" onclick="showTaskDetail('\${esc(t.id)}')">Cancel</button>
+      <button type="submit" form="edit-task-form" class="btn btn-sm">Save</button>
+    \`;
+  }
+
+  function toggleEditFields(type) {
+    document.getElementById('edit-when-field').style.display     = type === 'interval' ? 'none' : '';
+    document.getElementById('edit-interval-field').style.display = type === 'interval' ? '' : 'none';
+  }
+
+  function convertEditDatetime(form) {
+    const input  = document.getElementById('edit-when-input');
+    const hidden = document.getElementById('edit-when-hidden');
+    if (input && input.value) {
+      hidden.value = new Date(input.value).toISOString();
+    }
+    if (input) input.disabled = true;
   }
 
   function closeDetailModal() {

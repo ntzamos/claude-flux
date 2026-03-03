@@ -360,6 +360,17 @@ const server = Bun.serve({
       }
     }
 
+    // ── Relay processing state ───────────────────────────────
+    if (pathname === "/api/relay-status" && req.method === "GET") {
+      try {
+        const res = await fetch("http://localhost:8080/status", { signal: AbortSignal.timeout(1000) });
+        const data = await res.json();
+        return json(data);
+      } catch {
+        return json({ active: false, queue: 0 });
+      }
+    }
+
     // ── Tasks ────────────────────────────────────────────────
 
     if (pathname === "/api/tasks" && req.method === "GET") {
@@ -412,6 +423,34 @@ const server = Bun.serve({
       try {
         await sql`DELETE FROM scheduled_tasks WHERE id = ${id}`;
         return redirect(`/dashboard?tab=tasks&toast=success&msg=${encodeURIComponent("Task deleted.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=tasks&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    const taskEditMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/edit$/);
+    if (taskEditMatch && req.method === "POST") {
+      const id = taskEditMatch[1];
+      const form = await req.formData();
+      const description      = (form.get("description") as string)?.trim();
+      const schedule_type    = (form.get("schedule_type") as string) || "once";
+      const when             = (form.get("when") as string)?.trim();
+      const interval_minutes = parseInt(form.get("interval_minutes") as string || "0", 10);
+      const action_prompt    = (form.get("action_prompt") as string)?.trim();
+      if (!description || !action_prompt) {
+        return redirect(`/dashboard?tab=tasks&toast=error&msg=${encodeURIComponent("Description and action are required.")}`);
+      }
+      try {
+        await sql`
+          UPDATE scheduled_tasks SET
+            description = ${description},
+            schedule_type = ${schedule_type},
+            next_run_at = COALESCE(${when || null}::timestamptz, next_run_at),
+            interval_minutes = ${interval_minutes || null},
+            action_prompt = ${action_prompt}
+          WHERE id = ${id}
+        `;
+        return redirect(`/dashboard?tab=tasks&toast=success&msg=${encodeURIComponent("Task updated.")}`);
       } catch (err: any) {
         return redirect(`/dashboard?tab=tasks&toast=error&msg=${encodeURIComponent(err.message)}`);
       }

@@ -170,6 +170,27 @@ async function saveSession(state: SessionState): Promise<void> {
 let session = await loadSession();
 
 // ============================================================
+// PROCESSING QUEUE — track active state and pending messages
+// ============================================================
+
+let isActive = false;
+let pendingCount = 0;
+let processingChain: Promise<void> = Promise.resolve();
+
+function enqueue(fn: () => Promise<void>): void {
+  pendingCount++;
+  processingChain = processingChain.then(async () => {
+    pendingCount--;
+    isActive = true;
+    try {
+      await fn();
+    } finally {
+      isActive = false;
+    }
+  });
+}
+
+// ============================================================
 // LOCK FILE (prevent multiple instances)
 // ============================================================
 
@@ -817,165 +838,173 @@ bot.on("message:text", async (ctx) => {
 
   console.log(`Message: ${text.substring(0, 50)}...`);
 
-  const thinkingMsg = await ctx.reply("Thinking…");
-  await ctx.replyWithChatAction("typing");
+  enqueue(async () => {
+    const thinkingMsg = await ctx.reply("Thinking…");
+    await ctx.replyWithChatAction("typing");
 
-  // Fetch context before saving so current message isn't in its own history
-  const [relevantContext, memoryContext, recentHistory] = await Promise.all([
-    getRelevantContext(text),
-    getMemoryContext(),
-    getRecentHistory(),
-  ]);
+    // Fetch context before saving so current message isn't in its own history
+    const [relevantContext, memoryContext, recentHistory] = await Promise.all([
+      getRelevantContext(text),
+      getMemoryContext(),
+      getRecentHistory(),
+    ]);
 
-  await saveMessage("user", text);
+    await saveMessage("user", text);
 
-  const enrichedPrompt = buildPrompt(text, relevantContext, memoryContext, recentHistory);
-  const rawResponse = await callClaude(enrichedPrompt, { resume: true });
+    const enrichedPrompt = buildPrompt(text, relevantContext, memoryContext, recentHistory);
+    const rawResponse = await callClaude(enrichedPrompt, { resume: true });
 
-  await saveMessage("assistant", rawResponse);
-  await handleClaudeResponse(ctx, rawResponse, { thinkingMsgId: thinkingMsg.message_id });
+    await saveMessage("assistant", rawResponse);
+    await handleClaudeResponse(ctx, rawResponse, { thinkingMsgId: thinkingMsg.message_id });
+  });
 });
 
 // Voice messages
 bot.on("message:voice", async (ctx) => {
   const voice = ctx.message.voice;
   console.log(`Voice message: ${voice.duration}s`);
-  const thinkingMsg = await ctx.reply("Thinking…");
-  await ctx.replyWithChatAction("typing");
 
-  try {
-    const file = await ctx.getFile();
-    const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
-    const response = await fetch(url);
-    const buffer = Buffer.from(await response.arrayBuffer());
+  enqueue(async () => {
+    const thinkingMsg = await ctx.reply("Thinking…");
+    await ctx.replyWithChatAction("typing");
 
-    const transcription = await transcribe(buffer);
-    if (!transcription) {
-      await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
-      await ctx.reply(
-        "No whisper model found. Download one into the whisper-models/ folder:\n" +
-        "curl -L -o whisper-models/ggml-base.en.bin \\\n" +
-        "  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+    try {
+      const file = await ctx.getFile();
+      const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+      const response = await fetch(url);
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      const transcription = await transcribe(buffer);
+      if (!transcription) {
+        await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
+        await ctx.reply(
+          "No whisper model found. Download one into the whisper-models/ folder:\n" +
+          "curl -L -o whisper-models/ggml-base.en.bin \\\n" +
+          "  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+        );
+        return;
+      }
+
+      const [relevantContext, memoryContext, recentHistory] = await Promise.all([
+        getRelevantContext(transcription),
+        getMemoryContext(),
+        getRecentHistory(),
+      ]);
+
+      await saveMessage("user", `[Voice ${voice.duration}s]: ${transcription}`);
+
+      const enrichedPrompt = buildPrompt(
+        `[Voice message transcribed]: ${transcription}`,
+        relevantContext,
+        memoryContext,
+        recentHistory
       );
-      return;
+      const rawResponse = await callClaude(enrichedPrompt, { resume: true });
+
+      await saveMessage("assistant", rawResponse);
+      await handleClaudeResponse(ctx, rawResponse, { voiceReply: true, thinkingMsgId: thinkingMsg.message_id });
+    } catch (error) {
+      console.error("Voice error:", error);
+      await ctx.reply("Could not process voice message. Check logs for details.");
     }
-
-    const [relevantContext, memoryContext, recentHistory] = await Promise.all([
-      getRelevantContext(transcription),
-      getMemoryContext(),
-      getRecentHistory(),
-    ]);
-
-    await saveMessage("user", `[Voice ${voice.duration}s]: ${transcription}`);
-
-    const enrichedPrompt = buildPrompt(
-      `[Voice message transcribed]: ${transcription}`,
-      relevantContext,
-      memoryContext,
-      recentHistory
-    );
-    const rawResponse = await callClaude(enrichedPrompt, { resume: true });
-
-    await saveMessage("assistant", rawResponse);
-    await handleClaudeResponse(ctx, rawResponse, { voiceReply: true, thinkingMsgId: thinkingMsg.message_id });
-  } catch (error) {
-    console.error("Voice error:", error);
-    await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
-    await ctx.reply("Could not process voice message. Check logs for details.");
-  }
+  });
 });
 
 // Photos/Images
 bot.on("message:photo", async (ctx) => {
   console.log("Image received");
-  const thinkingMsg = await ctx.reply("Thinking…");
-  await ctx.replyWithChatAction("typing");
 
-  try {
-    // Get highest resolution photo
-    const photos = ctx.message.photo;
-    const photo = photos[photos.length - 1];
-    const file = await ctx.api.getFile(photo.file_id);
+  enqueue(async () => {
+    const thinkingMsg = await ctx.reply("Thinking…");
+    await ctx.replyWithChatAction("typing");
 
-    // Save to /files/ so it appears in the dashboard
-    const timestamp = Date.now();
-    const fileName = `photo_${timestamp}.jpg`;
-    const filePath = `/files/${fileName}`;
+    try {
+      // Get highest resolution photo
+      const photos = ctx.message.photo;
+      const photo = photos[photos.length - 1];
+      const file = await ctx.api.getFile(photo.file_id);
 
-    const response = await fetch(
-      `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`
-    );
-    const buffer = await response.arrayBuffer();
-    await writeFile(filePath, Buffer.from(buffer));
+      // Save to /files/ so it appears in the dashboard
+      const timestamp = Date.now();
+      const fileName = `photo_${timestamp}.jpg`;
+      const filePath = `/files/${fileName}`;
 
-    // Claude Code can see images via file path
-    const caption = ctx.message.caption || "Analyze this image.";
-    const prompt = `[Image: ${filePath}]\n\n${caption}`;
+      const response = await fetch(
+        `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`
+      );
+      const buffer = await response.arrayBuffer();
+      await writeFile(filePath, Buffer.from(buffer));
 
-    const [memoryContext, recentHistory] = await Promise.all([
-      getMemoryContext(),
-      getRecentHistory(),
-    ]);
+      // Claude Code can see images via file path
+      const caption = ctx.message.caption || "Analyze this image.";
+      const prompt = `[Image: ${filePath}]\n\n${caption}`;
 
-    await saveMessage("user", `[Image]: ${caption}`);
+      const [memoryContext, recentHistory] = await Promise.all([
+        getMemoryContext(),
+        getRecentHistory(),
+      ]);
 
-    const claudeResponse = await callClaude(
-      buildPrompt(prompt, undefined, memoryContext, recentHistory),
-      { resume: true }
-    );
+      await saveMessage("user", `[Image]: ${caption}`);
 
-    await saveMessage("assistant", claudeResponse);
-    await handleClaudeResponse(ctx, claudeResponse, { thinkingMsgId: thinkingMsg.message_id });
-    await ctx.reply(`Photo saved: ${fileName}\nView at: ${process.env.WEB_HOST || ""}/dashboard?tab=files`);
-  } catch (error) {
-    console.error("Image error:", error);
-    await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
-    await ctx.reply("Could not process image.");
-  }
+      const claudeResponse = await callClaude(
+        buildPrompt(prompt, undefined, memoryContext, recentHistory),
+        { resume: true }
+      );
+
+      await saveMessage("assistant", claudeResponse);
+      await handleClaudeResponse(ctx, claudeResponse, { thinkingMsgId: thinkingMsg.message_id });
+      await ctx.reply(`Photo saved: ${fileName}\nView at: ${process.env.WEB_HOST || ""}/dashboard?tab=files`);
+    } catch (error) {
+      console.error("Image error:", error);
+      await ctx.reply("Could not process image.");
+    }
+  });
 });
 
 // Documents
 bot.on("message:document", async (ctx) => {
   const doc = ctx.message.document;
   console.log(`Document: ${doc.file_name}`);
-  const thinkingMsg = await ctx.reply("Thinking…");
-  await ctx.replyWithChatAction("typing");
 
-  try {
-    const file = await ctx.getFile();
-    const timestamp = Date.now();
-    const fileName = doc.file_name ? `${timestamp}_${doc.file_name}` : `file_${timestamp}`;
-    const filePath = `/files/${fileName}`;
+  enqueue(async () => {
+    const thinkingMsg = await ctx.reply("Thinking…");
+    await ctx.replyWithChatAction("typing");
 
-    const response = await fetch(
-      `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`
-    );
-    const buffer = await response.arrayBuffer();
-    await writeFile(filePath, Buffer.from(buffer));
+    try {
+      const file = await ctx.getFile();
+      const timestamp = Date.now();
+      const fileName = doc.file_name ? `${timestamp}_${doc.file_name}` : `file_${timestamp}`;
+      const filePath = `/files/${fileName}`;
 
-    const caption = ctx.message.caption || `Analyze: ${doc.file_name}`;
-    const prompt = `[File: ${filePath}]\n\n${caption}`;
+      const response = await fetch(
+        `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`
+      );
+      const buffer = await response.arrayBuffer();
+      await writeFile(filePath, Buffer.from(buffer));
 
-    const [memoryContext, recentHistory] = await Promise.all([
-      getMemoryContext(),
-      getRecentHistory(),
-    ]);
+      const caption = ctx.message.caption || `Analyze: ${doc.file_name}`;
+      const prompt = `[File: ${filePath}]\n\n${caption}`;
 
-    await saveMessage("user", `[Document: ${doc.file_name}]: ${caption}`);
+      const [memoryContext, recentHistory] = await Promise.all([
+        getMemoryContext(),
+        getRecentHistory(),
+      ]);
 
-    const claudeResponse = await callClaude(
-      buildPrompt(prompt, undefined, memoryContext, recentHistory),
-      { resume: true }
-    );
+      await saveMessage("user", `[Document: ${doc.file_name}]: ${caption}`);
 
-    await saveMessage("assistant", claudeResponse);
-    await handleClaudeResponse(ctx, claudeResponse, { thinkingMsgId: thinkingMsg.message_id });
-    await ctx.reply(`File saved: ${fileName}\nView at: ${process.env.WEB_HOST || ""}/dashboard?tab=files`);
-  } catch (error) {
-    console.error("Document error:", error);
-    await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
-    await ctx.reply("Could not process document.");
-  }
+      const claudeResponse = await callClaude(
+        buildPrompt(prompt, undefined, memoryContext, recentHistory),
+        { resume: true }
+      );
+
+      await saveMessage("assistant", claudeResponse);
+      await handleClaudeResponse(ctx, claudeResponse, { thinkingMsgId: thinkingMsg.message_id });
+      await ctx.reply(`File saved: ${fileName}\nView at: ${process.env.WEB_HOST || ""}/dashboard?tab=files`);
+    } catch (error) {
+      console.error("Document error:", error);
+      await ctx.reply("Could not process document.");
+    }
+  });
 });
 
 // ============================================================
@@ -1176,6 +1205,13 @@ Bun.serve({
       });
     }
 
+    // Processing state — used by dashboard floating indicator
+    if (req.method === "GET" && url.pathname === "/status") {
+      return new Response(JSON.stringify({ active: isActive, queue: pendingCount }), {
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      });
+    }
+
     // MCP server test — spawns the server, JSON-RPC tools/list, returns results
     if (req.method === "POST" && url.pathname === "/mcp-test") {
       try {
@@ -1297,26 +1333,39 @@ Bun.serve({
         });
       }
 
-      const [relevantContext, memoryContext, recentHistory] = await Promise.all([
-        getRelevantContext(message),
-        getMemoryContext(),
-        getRecentHistory(),
-      ]);
+      // Run through the same queue as Telegram messages
+      return await new Promise<Response>((resolve) => {
+        enqueue(async () => {
+          try {
+            const [relevantContext, memoryContext, recentHistory] = await Promise.all([
+              getRelevantContext(message),
+              getMemoryContext(),
+              getRecentHistory(),
+            ]);
 
-      await saveMessage("user", message, "web");
+            await saveMessage("user", message, "web");
 
-      const enrichedPrompt = buildPrompt(message, relevantContext, memoryContext, recentHistory);
-      const rawResponse = await callClaude(enrichedPrompt, { resume: true });
+            const enrichedPrompt = buildPrompt(message, relevantContext, memoryContext, recentHistory);
+            const rawResponse = await callClaude(enrichedPrompt, { resume: true });
 
-      const afterMemory = await processMemoryIntents(rawResponse);
-      const afterSchedule = await processScheduleIntents(afterMemory);
-      const { clean } = parseAskIntent(afterSchedule);
-      const reply = clean || rawResponse;
+            const afterMemory = await processMemoryIntents(rawResponse);
+            const afterSchedule = await processScheduleIntents(afterMemory);
+            const { clean } = parseAskIntent(afterSchedule);
+            const reply = clean || rawResponse;
 
-      await saveMessage("assistant", reply, "web");
+            await saveMessage("assistant", reply, "web");
 
-      return new Response(JSON.stringify({ response: reply }), {
-        headers: { "Content-Type": "application/json" },
+            resolve(new Response(JSON.stringify({ response: reply }), {
+              headers: { "Content-Type": "application/json" },
+            }));
+          } catch (err: any) {
+            console.error("[http] Chat error:", err);
+            resolve(new Response(JSON.stringify({ error: err.message }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }));
+          }
+        });
       });
     } catch (err: any) {
       console.error("[http] Chat error:", err);
