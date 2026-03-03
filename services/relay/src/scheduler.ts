@@ -105,6 +105,19 @@ async function main() {
   const now = new Date();
   console.log(`[scheduler] ${now.toISOString()} — checking due tasks`);
 
+  // Update bot short description with current time so it's visible in Telegram
+  try {
+    const timeStr = now.toLocaleString("en-US", {
+      timeZone: USER_TIMEZONE,
+      hour: "2-digit",
+      minute: "2-digit",
+      weekday: "short",
+    });
+    await bot.api.setMyShortDescription(`Online — last seen ${timeStr}`);
+  } catch (_) {
+    // Non-fatal — don't let status update failures kill the scheduler
+  }
+
   let tasks: any[];
   try {
     tasks = await sql`
