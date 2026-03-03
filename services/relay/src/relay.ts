@@ -419,8 +419,10 @@ async function callClaude(
     const exitCode = await proc.exited;
 
     if (exitCode !== 0) {
-      console.error("Claude error:", stderr);
-      return `Error: ${stderr || "Claude exited with code " + exitCode}`;
+      const detail = stderr || output || `exit code ${exitCode}`;
+      console.error("Claude error (stderr):", stderr);
+      console.error("Claude error (stdout):", output);
+      return `Error: ${detail.trim()}`;
     }
 
     // Extract session ID from output if present (for --resume)
