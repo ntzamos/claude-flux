@@ -12,6 +12,14 @@ open http://localhost
 
 ---
 
+## ⭐ Star History
+
+If Claude Flux helps you, consider giving it a star to support the project!
+
+[![Star History Chart](https://api.star-history.com/svg?repos=ntzamos/claude-flux&type=Date)](https://star-history.com/#ntzamos/claude-flux&Date)
+
+---
+
 ## What It Does
 
 - **Chat with Claude on Telegram** — send messages, photos, voice, documents
@@ -37,7 +45,7 @@ That's it. Everything else is optional.
 ## Quick Start
 
 ```bash
-git clone https://github.com/your-username/claude-flux
+git clone https://github.com/ntzamos/claude-flux
 cd claude-flux
 
 cp .env.example .env          # set POSTGRES_PASSWORD
