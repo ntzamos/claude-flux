@@ -28,6 +28,9 @@ export async function renderChat(page = 1): Promise<string> {
   // Reverse to show oldest-first in the viewport (newest loaded via DESC, displayed reversed)
   const reversed = [...(messages || [])].reverse();
 
+  // Track the max id for client-side polling
+  const maxId = messages.length > 0 ? messages[0].id : 0;
+
   const bubbles = reversed.map(m => {
     const isUser = m.role === "user";
     const time = new Date(m.created_at).toLocaleString("en-US", {
@@ -107,76 +110,92 @@ export async function renderChat(page = 1): Promise<string> {
     el.style.height = Math.min(el.scrollHeight, 140) + 'px';
   }
 
-  // Scroll to bottom on load
-  document.getElementById('chat-anchor')?.scrollIntoView();
-
   const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const fmt = d => d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+
+  const list   = document.getElementById('messages-list');
+  const anchor = document.getElementById('chat-anchor');
+
+  // Start polling from the last rendered message id
+  let lastMsgId = ${maxId};
+  let optimisticBubble = null;
+
+  function makeBubble(m) {
+    const isUser = m.role === 'user';
+    const time = fmt(new Date(m.created_at));
+    const content = esc(m.content);
+    const div = document.createElement('div');
+    if (isUser) {
+      div.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:0.75rem';
+      div.innerHTML = \`<div style="max-width:72%"><div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem;letter-spacing:0.05em">\${time}</div><div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">\${content}</div></div>\`;
+    } else {
+      div.style.cssText = 'display:flex;justify-content:flex-start;margin-bottom:0.75rem';
+      div.innerHTML = \`<div style="max-width:72%"><div style="font-size:0.62rem;color:var(--muted);margin-bottom:0.25rem;letter-spacing:0.05em">Claude · \${time}</div><div style="background:var(--surface2);color:var(--text);padding:0.6rem 0.9rem;border-radius:14px 14px 14px 3px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">\${content}</div></div>\`;
+    }
+    return div;
+  }
+
+  async function pollMessages() {
+    try {
+      const res = await fetch('/api/messages?since=' + lastMsgId);
+      const data = await res.json();
+      if (data.data && data.data.length > 0) {
+        // Remove optimistic bubble once real messages arrive
+        if (optimisticBubble) {
+          optimisticBubble.remove();
+          optimisticBubble = null;
+        }
+        const wasAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+        for (const m of data.data) {
+          list.insertBefore(makeBubble(m), anchor);
+          if (m.id > lastMsgId) lastMsgId = m.id;
+        }
+        if (wasAtBottom) anchor.scrollIntoView({ behavior: 'smooth' });
+      }
+    } catch (e) {}
+  }
+
+  // Poll every 2.5 seconds for new messages
+  setInterval(pollMessages, 2500);
+
+  // Scroll to bottom on load
+  anchor?.scrollIntoView();
 
   async function sendChatMsg() {
     const input  = document.getElementById('chat-input');
     const btn    = document.getElementById('chat-send-btn');
     const status = document.getElementById('chat-status');
-    const list   = document.getElementById('messages-list');
     const msg    = input.value.trim();
     if (!msg || btn.disabled) return;
 
     btn.disabled = true;
     btn.textContent = '...';
     input.disabled  = true;
-    status.style.color = 'var(--muted)';
-    status.textContent  = 'Sending…';
-
-    // Optimistic user bubble
-    const anchor = document.getElementById('chat-anchor');
-    const userBubble = document.createElement('div');
-    userBubble.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:0.75rem';
-    userBubble.innerHTML = \`
-      <div style="max-width:72%">
-        <div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem">\${fmt(new Date())}</div>
-        <div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">\${esc(msg)}</div>
-      </div>\`;
-    list.insertBefore(userBubble, anchor);
-
-    // Thinking bubble
-    const thinkBubble = document.createElement('div');
-    thinkBubble.style.cssText = 'display:flex;justify-content:flex-start;margin-bottom:0.75rem';
-    thinkBubble.innerHTML = \`
-      <div style="max-width:72%">
-        <div style="font-size:0.62rem;color:var(--muted);margin-bottom:0.25rem">Claude</div>
-        <div style="background:var(--surface2);color:var(--muted);padding:0.6rem 0.9rem;border-radius:14px 14px 14px 3px;font-size:0.84rem">Thinking…</div>
-      </div>\`;
-    list.insertBefore(thinkBubble, anchor);
-
     input.value = '';
     input.style.height = 'auto';
+    status.textContent = '';
+
+    // Optimistic user bubble — replaced by polling when message appears in DB
+    optimisticBubble = document.createElement('div');
+    optimisticBubble.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:0.75rem';
+    optimisticBubble.innerHTML = \`<div style="max-width:72%"><div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem;letter-spacing:0.05em">\${fmt(new Date())}</div><div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">\${esc(msg)}</div></div>\`;
+    list.insertBefore(optimisticBubble, anchor);
     anchor.scrollIntoView({ behavior: 'smooth' });
 
     try {
-      const res  = await fetch('/api/chat', {
+      await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg }),
       });
-      const data = await res.json();
-      const reply = data.error ? ('Error: ' + data.error) : (data.response || '');
-      const replyColor = data.error ? 'color:#ff7070' : 'color:var(--text)';
-      thinkBubble.innerHTML = \`
-        <div style="max-width:72%">
-          <div style="font-size:0.62rem;color:var(--muted);margin-bottom:0.25rem">Claude · \${fmt(new Date())}</div>
-          <div style="background:var(--surface2);\${replyColor};padding:0.6rem 0.9rem;border-radius:14px 14px 14px 3px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">\${esc(reply)}</div>
-        </div>\`;
-      status.textContent = '';
     } catch (e) {
-      thinkBubble.querySelector('div > div:last-child').textContent = 'Network error — is the relay running?';
       status.style.color = 'var(--red)';
-      status.textContent = 'Network error';
+      status.textContent = 'Network error — is the relay running?';
     } finally {
       btn.disabled    = false;
       btn.textContent = 'Send';
       input.disabled  = false;
       input.focus();
-      anchor.scrollIntoView({ behavior: 'smooth' });
     }
   }
   </script>`;

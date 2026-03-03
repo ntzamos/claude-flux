@@ -460,9 +460,21 @@ const server = Bun.serve({
 
     if (pathname === "/api/messages") {
       const page = parseInt(url.searchParams.get("page") ?? "1", 10);
+      const since = url.searchParams.get("since");
       const size = 50;
       const offset = (page - 1) * size;
       try {
+        if (since !== null) {
+          const sinceId = parseInt(since, 10) || 0;
+          const data = await sql`
+            SELECT id, created_at, role, content, channel
+            FROM messages
+            WHERE id > ${sinceId}
+            ORDER BY created_at ASC
+            LIMIT 100
+          `;
+          return json({ data, total: data.length, page: 1 });
+        }
         const [data, countResult] = await Promise.all([
           sql`
             SELECT id, created_at, role, content, channel
