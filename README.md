@@ -1,5 +1,7 @@
 # Claude Flux
 
+![Claude Flux](https://i.ibb.co/3mDdYzDn/claude-flux.jpg)
+
 **[🌐 Landing page](https://ntzamos.github.io/claude-flux)**
 
 A self-hosted AI assistant on Telegram, powered by Claude Code CLI.
