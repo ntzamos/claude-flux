@@ -1168,14 +1168,7 @@ bot.on("message:photo", async (ctx) => {
       const rawCaption = ctx.message.caption || "";
       const isDetect = rawCaption.trim().toLowerCase().startsWith("/detect");
       const caption = isDetect
-        ? `Analyze this image for defects. Use code (Bun + canvas from /home/relay/app/services/relay/node_modules/canvas/index.js) to:
-1. Load the image from ${filePath}
-2. Identify the exact defect location precisely — do not guess
-3. Draw a red bounding box around the defect with a label
-4. Add a zoomed inset (2.4×) of the defect region at the bottom
-5. Save the annotated result to /files/defect-annotated.jpg
-Then send the file via: bash /home/relay/app/actions/send_file_to_telegram.sh /files/defect-annotated.jpg
-Finally, reply with plain text (no markdown): defect type, exact location description, and Grade A/B/C/D with one sentence justification.`
+        ? `/detect ${filePath}`
         : rawCaption || "Analyze this image.";
       const prompt = `[Image: ${filePath}]\n\n${caption}`;
 
@@ -1351,7 +1344,23 @@ function buildPrompt(
     "\nNEVER use 'claude mcp add' — it writes to a project-scoped file that is not visible to the dashboard."
   );
 
-  parts.push(`\nUser: ${userMessage}`);
+  if (userMessage.startsWith("/detect ")) {
+    const imgPath = userMessage.slice(8).trim();
+    parts.push(
+      "\nDEFECT DETECTION TASK:" +
+      `\nImage: ${imgPath}` +
+      "\nUsing Bun + canvas (/home/relay/app/services/relay/node_modules/canvas/index.js):" +
+      "\n1. Load the image, get dimensions." +
+      "\n2. Visually identify the defect — exact pixel region, no guessing." +
+      "\n3. Draw red bbox + label. Add 2.4x zoomed inset at bottom." +
+      "\n4. Save to /files/defect-annotated.jpg" +
+      "\n5. Run: bash /home/relay/app/actions/send_file_to_telegram.sh /files/defect-annotated.jpg" +
+      "\n6. Reply plain text: defect type, location, Grade A/B/C/D + one sentence reason."
+    );
+    parts.push(`\nUser: [Image: ${imgPath}]\n\nRun the defect detection task above.`);
+  } else {
+    parts.push(`\nUser: ${userMessage}`);
+  }
 
   return parts.join("\n");
 }
