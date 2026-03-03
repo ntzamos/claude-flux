@@ -520,6 +520,7 @@ const BOT_COMMANDS = [
   { command: "botinfo", description: "Bot configuration & status" },
   { command: "userinfo", description: "Your user info" },
   { command: "restart", description: "Restart the bot" },
+  { command: "tunnel", description: "Enable/disable remote dashboard access (/tunnel on|off|status)" },
 ];
 
 bot.command("help", async (ctx) => {
@@ -602,6 +603,51 @@ bot.command("userinfo", async (ctx) => {
 bot.command("restart", async (ctx) => {
   await ctx.reply("Restarting...");
   setTimeout(() => process.exit(0), 500);
+});
+
+bot.command("tunnel", async (ctx) => {
+  const arg = ctx.message?.text?.split(" ")[1]?.toLowerCase();
+
+  const getNgrokUrl = async (): Promise<string | null> => {
+    try {
+      const res = await fetch("http://localhost:4040/api/tunnels");
+      const data = (await res.json()) as { tunnels?: Array<{ proto: string; public_url: string }> };
+      return data.tunnels?.find((t) => t.proto === "https")?.public_url ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  if (!arg || arg === "status") {
+    const url = await getNgrokUrl();
+    if (url) {
+      await ctx.reply(`Remote access is ON\n${url}`);
+    } else {
+      await ctx.reply("Remote access is OFF — dashboard is only accessible locally.");
+    }
+    return;
+  }
+
+  if (arg === "on") {
+    const token = process.env.NGROK_AUTH_TOKEN;
+    if (!token) {
+      await ctx.reply("No ngrok auth token configured. Add NGROK_AUTH_TOKEN in Settings first.");
+      return;
+    }
+    await sql`INSERT INTO settings (key, value) VALUES ('TUNNEL_ENABLED', 'true') ON CONFLICT (key) DO UPDATE SET value = 'true'`;
+    await ctx.reply("Tunnel enabled. Restarting now...");
+    setTimeout(() => process.exit(0), 500);
+    return;
+  }
+
+  if (arg === "off") {
+    await sql`INSERT INTO settings (key, value) VALUES ('TUNNEL_ENABLED', 'false') ON CONFLICT (key) DO UPDATE SET value = 'false'`;
+    await ctx.reply("Tunnel disabled. Restarting now...");
+    setTimeout(() => process.exit(0), 500);
+    return;
+  }
+
+  await ctx.reply("Usage: /tunnel [on|off|status]");
 });
 
 bot.command("memory", async (ctx) => {
