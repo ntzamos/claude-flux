@@ -1173,7 +1173,7 @@ bot.on("message:photo", async (ctx) => {
       const prompt = `[Image: ${filePath}]\n\n${caption}`;
 
       const [memoryContext, recentHistory] = await Promise.all([
-        getMemoryContext(),
+        isDetect ? Promise.resolve("") : getMemoryContext(),
         isDetect ? Promise.resolve("") : getRecentHistory(),
       ]);
 
