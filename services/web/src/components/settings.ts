@@ -65,6 +65,13 @@ export const FIELD_GROUPS = [
       { key: "GITHUB_USERNAME", label: "GitHub Username", type: "text", placeholder: "ntzamos", required: false },
     ],
   },
+  {
+    title: "Image Generation (Nano Banana)",
+    description: `Generate images using Google's Nano Banana model (Gemini 3.1 Flash Image). Get an API key at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com/apikey</a>.`,
+    fields: [
+      { key: "GEMINI_API_KEY", label: "Gemini API Key", type: "password", placeholder: "AIza...", required: false },
+    ],
+  },
 ];
 
 function renderThemeSection(current: Record<string, string>): string {
