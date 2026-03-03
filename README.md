@@ -56,6 +56,10 @@ open http://localhost          # complete onboarding (< 5 min)
 The onboarding wizard walks you through connecting Telegram and Claude.
 Once done, your bot is live and the dashboard is ready.
 
+> **Want your bot to upgrade itself?** Fork the repo first, then clone your fork.
+> The bot can modify its own code and push updates back to your GitHub — but only if it has write access to the repo.
+> A fork gives you a personal copy you control.
+
 ---
 
 ## Services
