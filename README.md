@@ -49,7 +49,7 @@ git clone https://github.com/ntzamos/claude-flux
 cd claude-flux
 
 cp .env.example .env          # set POSTGRES_PASSWORD
-docker compose up -d          # starts 3 containers
+docker compose up -d          # starts 2 containers
 open http://localhost          # complete onboarding (< 5 min)
 ```
 
@@ -66,11 +66,10 @@ Once done, your bot is live and the dashboard is ready.
 
 | Service | What it does | Port |
 |---------|-------------|------|
-| **web** | Dashboard + onboarding UI | 80 (http://localhost) |
-| **relay** | Telegram bot (Claude-powered) | — |
+| **bot** | Telegram relay + web dashboard (Claude-powered) | 80 (http://localhost) |
 | **db** | PostgreSQL 16 + pgvector | — |
 
-Three containers. That's the whole stack.
+Two containers. That's the whole stack.
 
 ---
 
@@ -90,7 +89,7 @@ Three containers. That's the whole stack.
 ## Project Structure
 
 ```
-docker-compose.yml          ← orchestrates db + relay + web
+docker-compose.yml          ← orchestrates db + bot
 .env.example                ← copy to .env, set POSTGRES_PASSWORD
 migrations/                 ← SQL applied automatically on first boot
 config/profile.md           ← your personal profile (optional, loaded every message)
@@ -152,9 +151,9 @@ On every message, recent relevant context is injected into the prompt automatica
 docker compose up -d          # start all services
 docker compose down           # stop all services
 docker compose down -v        # stop + wipe all data (full reset)
-docker compose logs relay -f  # follow relay logs live
+docker compose logs bot -f    # follow bot logs live
 docker compose ps             # check service status
-docker compose restart relay  # restart relay (also done automatically on settings save)
+docker compose restart bot    # restart bot (also done automatically on settings save)
 ```
 
 ---
@@ -163,7 +162,7 @@ docker compose restart relay  # restart relay (also done automatically on settin
 
 **Bot not responding**
 ```bash
-docker compose logs relay --tail=30
+docker compose logs bot --tail=30
 ```
 
 **Claude CLI not authenticated**
