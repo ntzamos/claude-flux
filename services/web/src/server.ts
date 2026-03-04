@@ -1026,6 +1026,41 @@ const server = Bun.serve({
       }
     }
 
+    // ── Device assessments ──────────────────────────────────────
+    if (pathname === "/api/devices" && req.method === "GET") {
+      try {
+        const data = await sql`
+          SELECT id, imei, device_info, overall_grade, status,
+                 COALESCE(array_length(front_images,1),0) AS front_count,
+                 COALESCE(array_length(back_images,1),0)  AS back_count,
+                 COALESCE(array_length(frame_images,1),0) AS frame_count,
+                 created_at
+          FROM device_assessments
+          ORDER BY created_at DESC LIMIT 100
+        `;
+        return json(data);
+      } catch (err: any) {
+        return json({ error: err.message }, 500);
+      }
+    }
+
+    const deviceDeleteMatch = pathname.match(/^\/api\/devices\/([^/]+)\/delete$/);
+    if (deviceDeleteMatch && req.method === "POST") {
+      const id = deviceDeleteMatch[1];
+      if (!/^[0-9a-f-]{36}$/.test(id)) {
+        return redirect(`/dashboard?tab=devices&toast=error&msg=${encodeURIComponent("Invalid ID.")}`);
+      }
+      try {
+        await sql`DELETE FROM device_assessments WHERE id = ${id}`;
+        const { rm } = await import("fs/promises");
+        await rm(`/files/devices/${id}`, { recursive: true, force: true });
+        return redirect(`/dashboard?tab=devices&toast=success&msg=${encodeURIComponent("Assessment deleted.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=devices&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+    // ── End device assessments ──────────────────────────────────
+
     return new Response("Not Found", { status: 404 });
   },
 });

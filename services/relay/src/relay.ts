@@ -21,6 +21,20 @@ import {
   getRelevantContext,
 } from "./memory.ts";
 import { loadSettings } from "./config.ts";
+import {
+  getAssessmentState,
+  createAssessment,
+  advanceStep,
+  clearAssessmentState,
+  getAssessment,
+  saveDeviceImage,
+  appendImage,
+  removeLastImage,
+  validateImageSide,
+  runFullGrading,
+  listAssessments,
+  type ImageSide,
+} from "./devices.ts";
 
 // ============================================================
 // SETTINGS BOOTSTRAP (Docker mode)
@@ -588,6 +602,195 @@ async function handleClaudeResponse(
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
 
+  // ── Device Assessment callbacks ──────────────────────────────
+  if (data === "device:new") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const assessment = await createAssessment(ctx.chat!.id);
+    await ctx.reply(
+      `New assessment started (ID: ${assessment.id.slice(0, 8)})\n\nWhat is the IMEI of the device? Send the number, or tap Skip.`,
+      { reply_markup: new InlineKeyboard().text("Skip IMEI", "device:skip_imei") }
+    );
+    return;
+  }
+
+  if (data === "device:skip_imei") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const state = await getAssessmentState(ctx.chat!.id);
+    if (!state) { await ctx.reply("No active assessment. Use /device to start."); return; }
+    await advanceStep(ctx.chat!.id, "pending_info");
+    await ctx.reply(
+      "What device is this? (e.g. Samsung Galaxy S21, 128GB, Phantom Gray)\nSend a description or tap Skip.",
+      { reply_markup: new InlineKeyboard().text("Skip Info", "device:skip_info") }
+    );
+    return;
+  }
+
+  if (data === "device:skip_info") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const state = await getAssessmentState(ctx.chat!.id);
+    if (!state) { await ctx.reply("No active assessment. Use /device to start."); return; }
+    await advanceStep(ctx.chat!.id, "collecting_front");
+    await ctx.reply(
+      "Send photos of the FRONT of the device (screen side). You can send multiple. Tap Done when finished.",
+      { reply_markup: new InlineKeyboard().text("Done — front photos collected", "device:done_front") }
+    );
+    return;
+  }
+
+  if (data === "device:done_front") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const state = await getAssessmentState(ctx.chat!.id);
+    if (!state) { await ctx.reply("No active assessment."); return; }
+    const assessment = await getAssessment(state.assessment_id);
+    if (!assessment || assessment.front_images.length === 0) {
+      await ctx.reply(
+        "Please send at least one front photo before continuing.",
+        { reply_markup: new InlineKeyboard().text("Done — front photos collected", "device:done_front") }
+      );
+      return;
+    }
+    await advanceStep(ctx.chat!.id, "collecting_back");
+    await ctx.reply(
+      `Front: ${assessment.front_images.length} photo(s) saved.\n\nNow send photos of the BACK of the device (rear panel). Tap Done when finished.`,
+      { reply_markup: new InlineKeyboard().text("Done — back photos collected", "device:done_back") }
+    );
+    return;
+  }
+
+  if (data === "device:done_back") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const state = await getAssessmentState(ctx.chat!.id);
+    if (!state) { await ctx.reply("No active assessment."); return; }
+    const assessment = await getAssessment(state.assessment_id);
+    if (!assessment || assessment.back_images.length === 0) {
+      await ctx.reply(
+        "Please send at least one back photo before continuing.",
+        { reply_markup: new InlineKeyboard().text("Done — back photos collected", "device:done_back") }
+      );
+      return;
+    }
+    await advanceStep(ctx.chat!.id, "collecting_frame");
+    await ctx.reply(
+      `Back: ${assessment.back_images.length} photo(s) saved.\n\nNow send photos of the SIDES/FRAME of the device (edges and corners). Tap Skip if you don't want to include frame photos.`,
+      {
+        reply_markup: new InlineKeyboard()
+          .text("Done — frame photos collected", "device:done_frame")
+          .row()
+          .text("Skip frame photos", "device:skip_frame")
+      }
+    );
+    return;
+  }
+
+  if (data === "device:skip_frame" || data === "device:done_frame") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const state = await getAssessmentState(ctx.chat!.id);
+    if (!state) { await ctx.reply("No active assessment."); return; }
+    if (data === "device:done_frame") {
+      const assessment = await getAssessment(state.assessment_id);
+      if (!assessment || assessment.frame_images.length === 0) {
+        await ctx.reply(
+          "Please send at least one frame photo or tap Skip.",
+          {
+            reply_markup: new InlineKeyboard()
+              .text("Done — frame photos collected", "device:done_frame")
+              .row()
+              .text("Skip frame photos", "device:skip_frame")
+          }
+        );
+        return;
+      }
+    }
+    await advanceStep(ctx.chat!.id, "processing");
+    const thinkingMsg = await ctx.reply("All photos collected. Running defect analysis on each image — this may take a minute...");
+    enqueue(async () => {
+      try {
+        const freshAssessment = await getAssessment(state.assessment_id);
+        if (!freshAssessment) { await ctx.reply("Assessment not found."); return; }
+        const gradeSummary = await runFullGrading(freshAssessment, callClaude, BOT_TOKEN);
+        await clearAssessmentState(ctx.chat!.id);
+        await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
+        await ctx.reply(gradeSummary);
+        await ctx.reply(`View full results at ${process.env.WEB_HOST || ""}/dashboard?tab=devices`);
+      } catch (err: any) {
+        console.error("[device] Grading failed:", err);
+        await ctx.reply("Grading failed. Photos are saved — use /device > Continue to retry.");
+      }
+    });
+    return;
+  }
+
+  if (data === "device:list") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const assessments = await listAssessments(10);
+    if (!assessments.length) {
+      await ctx.reply("No assessments yet. Use /device to start a new one.");
+      return;
+    }
+    const lines = ["Recent assessments:\n"];
+    for (const a of assessments) {
+      const date = new Date(a.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const grade = a.overall_grade ? `Grade ${a.overall_grade}` : a.status.replace(/_/g, " ");
+      const info = (a.device_info as any)?.description || "Unknown device";
+      lines.push(`${a.id.slice(0, 8)} — ${info.slice(0, 30)} — ${grade} (${date})`);
+    }
+    await ctx.reply(lines.join("\n"));
+    return;
+  }
+
+  if (data === "device:continue") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const state = await getAssessmentState(ctx.chat!.id);
+    if (!state) {
+      await ctx.reply("No active assessment in progress. Use /device > New to start one.");
+      return;
+    }
+    const step = state.current_step;
+    if (step === "pending_imei") {
+      await ctx.reply("Send the IMEI, or tap Skip.", { reply_markup: new InlineKeyboard().text("Skip IMEI", "device:skip_imei") });
+    } else if (step === "pending_info") {
+      await ctx.reply("Send device model/info, or tap Skip.", { reply_markup: new InlineKeyboard().text("Skip Info", "device:skip_info") });
+    } else if (step === "collecting_front") {
+      const a = await getAssessment(state.assessment_id);
+      await ctx.reply(`Send FRONT photos. ${a?.front_images.length ?? 0} received so far.`, { reply_markup: new InlineKeyboard().text("Done — front photos collected", "device:done_front") });
+    } else if (step === "collecting_back") {
+      const a = await getAssessment(state.assessment_id);
+      await ctx.reply(`Send BACK photos. ${a?.back_images.length ?? 0} received so far.`, { reply_markup: new InlineKeyboard().text("Done — back photos collected", "device:done_back") });
+    } else if (step === "collecting_frame") {
+      const a = await getAssessment(state.assessment_id);
+      await ctx.reply(`Send FRAME/SIDES photos. ${a?.frame_images.length ?? 0} received so far.`, {
+        reply_markup: new InlineKeyboard()
+          .text("Done — frame photos collected", "device:done_frame")
+          .row()
+          .text("Skip frame photos", "device:skip_frame")
+      });
+    } else {
+      await ctx.reply(`Assessment is in '${step}' state. Check /device for options.`);
+    }
+    return;
+  }
+
+  if (data === "device:cancel") {
+    await ctx.answerCallbackQuery("Assessment cancelled.");
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const state = await getAssessmentState(ctx.chat!.id);
+    if (state) {
+      await sql`UPDATE device_assessments SET status = 'cancelled', updated_at = NOW() WHERE id = ${state.assessment_id}`;
+      await clearAssessmentState(ctx.chat!.id);
+    }
+    await ctx.reply("Assessment cancelled. Use /device to start a new one.");
+    return;
+  }
+  // ── End device callbacks ─────────────────────────────────────
+
   if (data.startsWith("confirm:")) {
     const key = data.replace("confirm:", "");
     const pending = pendingActions.get(key);
@@ -704,6 +907,7 @@ const BOT_COMMANDS = [
   { command: "detect", description: "Detect defects in an image — send as caption with a photo" },
   { command: "fetch", description: "Fetch a webpage and return its content as markdown — /fetch <url>" },
   { command: "newsession", description: "Clear current Claude session and start fresh" },
+  { command: "device", description: "Grade a smartphone — collect photos and get A/B/C/D grading" },
 ];
 
 bot.command("start", async (ctx) => {
@@ -1071,6 +1275,20 @@ bot.command("fetch", async (ctx) => {
   }
 });
 
+// Device grading
+bot.command("device", async (ctx) => {
+  const keyboard = new InlineKeyboard()
+    .text("New Assessment", "device:new")
+    .text("List Assessments", "device:list")
+    .row()
+    .text("Continue Current", "device:continue")
+    .text("Cancel Current", "device:cancel");
+  await ctx.reply(
+    "Device Grading\n\nCollect front, back, and frame photos of a smartphone for A/B/C/D defect grading.",
+    { reply_markup: keyboard }
+  );
+});
+
 // ============================================================
 // QUEUE RECOVERY — replays pending text messages after restart
 // ============================================================
@@ -1139,6 +1357,46 @@ async function recoverPendingMessages(): Promise<void> {
 // Text messages
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text;
+
+  // ── Device assessment text intercept ────────────────────────
+  const deviceState = await getAssessmentState(ctx.chat!.id);
+  if (deviceState) {
+    if (text.startsWith("/")) {
+      // Allow /device and /help through; block all other commands during assessment
+      if (!text.startsWith("/device") && !text.startsWith("/help")) {
+        await ctx.reply(
+          "You have an active device assessment. Send photos or use /device to manage it.",
+          { reply_markup: new InlineKeyboard().text("Cancel Assessment", "device:cancel") }
+        );
+        return;
+      }
+    } else if (deviceState.current_step === "pending_imei") {
+      await sql`UPDATE device_assessments SET imei = ${text.trim()}, updated_at = NOW() WHERE id = ${deviceState.assessment_id}`;
+      await advanceStep(ctx.chat!.id, "pending_info");
+      await ctx.reply(
+        "IMEI saved. What device is this? (e.g. iPhone 14 Pro 256GB) Or tap Skip.",
+        { reply_markup: new InlineKeyboard().text("Skip Info", "device:skip_info") }
+      );
+      return;
+    } else if (deviceState.current_step === "pending_info") {
+      await sql`UPDATE device_assessments SET device_info = ${JSON.stringify({ description: text.trim() })}, updated_at = NOW() WHERE id = ${deviceState.assessment_id}`;
+      await advanceStep(ctx.chat!.id, "collecting_front");
+      await ctx.reply(
+        "Device info saved. Now send photos of the FRONT of the device (screen side). Tap Done when ready.",
+        { reply_markup: new InlineKeyboard().text("Done — front photos collected", "device:done_front") }
+      );
+      return;
+    } else if (deviceState.current_step.startsWith("collecting_")) {
+      const side = deviceState.current_step.replace("collecting_", "");
+      const doneData = `device:done_${side}`;
+      const kb = side === "frame"
+        ? new InlineKeyboard().text("Done — frame photos collected", "device:done_frame").row().text("Skip frame photos", "device:skip_frame")
+        : new InlineKeyboard().text(`Done — ${side} photos collected`, doneData);
+      await ctx.reply(`Send ${side} photos or tap Done.`, { reply_markup: kb });
+      return;
+    }
+  }
+  // ─────────────────────────────────────────────────────────
 
   // Skip commands — handled above
   if (text.startsWith("/")) return;
@@ -1231,6 +1489,14 @@ bot.on("message:photo", async (ctx) => {
 
   const originalMessageId = ctx.message.message_id;
   enqueue(async () => {
+    // ── Device assessment photo intercept ─────────────────────
+    const deviceState = await getAssessmentState(ctx.chat!.id);
+    if (deviceState && ["collecting_front", "collecting_back", "collecting_frame"].includes(deviceState.current_step)) {
+      await handleDevicePhoto(ctx, deviceState.assessment_id, deviceState.current_step.replace("collecting_", "") as ImageSide);
+      return;
+    }
+    // ─────────────────────────────────────────────────────────
+
     const thinkingMsg = await ctx.reply("Thinking…");
     await ctx.replyWithChatAction("typing");
 
@@ -1329,6 +1595,62 @@ bot.on("message:document", async (ctx) => {
     }
   });
 });
+
+// ============================================================
+// DEVICE PHOTO HANDLER
+// ============================================================
+
+async function handleDevicePhoto(ctx: any, assessmentId: string, side: ImageSide): Promise<void> {
+  const checkMsg = await ctx.reply(`Checking ${side} photo...`);
+  await ctx.replyWithChatAction("typing");
+
+  try {
+    const photos = ctx.message.photo;
+    const photo = photos[photos.length - 1];
+    const file = await ctx.api.getFile(photo.file_id);
+    const response = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`);
+    const buffer = await response.arrayBuffer();
+
+    // Save to device directory
+    const relPath = await saveDeviceImage(assessmentId, side, buffer);
+
+    // Light validation
+    const validation = await validateImageSide(relPath, side, callClaude);
+
+    await ctx.api.deleteMessage(ctx.chat!.id, checkMsg.message_id).catch(() => {});
+
+    const doneButton = (label: string, cbData: string) =>
+      new InlineKeyboard().text(label, cbData);
+
+    if (validation === "wrong_side") {
+      await removeLastImage(relPath);
+      const sideLabel = side === "frame" ? "sides/edges" : side;
+      await ctx.reply(
+        `That doesn't look like the ${sideLabel} of the device. Please send a ${sideLabel} photo.`,
+        { reply_markup: doneButton(`Done — ${side} photos collected`, `device:done_${side}`) }
+      );
+      return;
+    }
+
+    const count = await appendImage(assessmentId, side, relPath);
+
+    if (validation === "unclear") {
+      await ctx.reply(
+        `Photo ${count} saved (could not verify the side — send a clearer photo if needed). Tap Done when ready.`,
+        { reply_markup: doneButton(`Done — ${side} photos collected`, `device:done_${side}`) }
+      );
+    } else {
+      await ctx.reply(
+        `${side.charAt(0).toUpperCase() + side.slice(1)} photo ${count} saved. Send more or tap Done.`,
+        { reply_markup: doneButton(`Done — ${side} photos collected`, `device:done_${side}`) }
+      );
+    }
+  } catch (err: any) {
+    await ctx.api.deleteMessage(ctx.chat!.id, checkMsg.message_id).catch(() => {});
+    console.error("[device] handleDevicePhoto error:", err);
+    await ctx.reply("Error saving photo. Please try again.");
+  }
+}
 
 // ============================================================
 // HELPERS
