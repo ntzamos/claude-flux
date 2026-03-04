@@ -173,25 +173,33 @@ export async function removeLastImage(imagePath: string): Promise<void> {
 // VALIDATION (lightweight Claude call — no session, no memory)
 // ============================================================
 
+export type ValidationResult = "valid" | "wrong_side" | "no_device" | "blurry" | "dirty" | "unclear";
+
 export async function validateImageSide(
   imagePath: string,
   expectedSide: ImageSide,
   callClaudeFn: (prompt: string, opts?: { resume?: boolean }) => Promise<string>
-): Promise<"valid" | "wrong_side" | "unclear"> {
+): Promise<ValidationResult> {
   const sideLabel = expectedSide === "frame" ? "sides/edges/frame" : expectedSide;
   const prompt =
     `Look at this image: /files/${imagePath}\n` +
-    `Is this the ${sideLabel} of a smartphone?\n` +
-    `Reply with exactly one word: valid, wrong_side, or unclear.\n` +
-    `- valid: it clearly shows the ${sideLabel} of a phone\n` +
-    `- wrong_side: it shows a different side of a phone\n` +
-    `- unclear: the image is blurry, too dark, or not a phone at all`;
+    `I need to verify this is a usable photo of the ${sideLabel} of a smartphone for grading.\n` +
+    `Reply with exactly one word from this list: valid, wrong_side, no_device, blurry, dirty.\n` +
+    `- valid: clearly shows the ${sideLabel} of a phone, in focus, surface visible\n` +
+    `- wrong_side: shows a different side of the phone (e.g. got back when expecting front)\n` +
+    `- no_device: no phone visible, or the device is partially out of frame / obstructed\n` +
+    `- blurry: image is out of focus, motion-blurred, or too dark to see the surface\n` +
+    `- dirty: surface is heavily covered in fingerprints or smudges that obscure the panel\n` +
+    `If multiple issues apply, pick the most critical one (blurry > dirty > no_device > wrong_side).`;
 
   try {
     const result = await callClaudeFn(prompt, { resume: false });
-    const normalized = result.trim().toLowerCase();
-    if (normalized.includes("valid") && !normalized.includes("wrong")) return "valid";
-    if (normalized.includes("wrong_side") || normalized.includes("wrong side")) return "wrong_side";
+    const normalized = result.trim().toLowerCase().split(/\s/)[0];
+    if (normalized === "valid") return "valid";
+    if (normalized === "wrong_side") return "wrong_side";
+    if (normalized === "no_device") return "no_device";
+    if (normalized === "blurry") return "blurry";
+    if (normalized === "dirty") return "dirty";
     return "unclear";
   } catch {
     return "unclear";

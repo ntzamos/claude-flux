@@ -1624,11 +1624,17 @@ async function handleDevicePhoto(ctx: any, assessmentId: string, side: ImageSide
     const doneButton = (label: string, cbData: string) =>
       new InlineKeyboard().text(label, cbData);
 
-    if (validation === "wrong_side") {
+    const rejectMessages: Record<string, string> = {
+      wrong_side: `That looks like the wrong side. Please send a photo of the ${side === "frame" ? "sides/edges" : side}.`,
+      no_device:  "The device isn't visible in that photo — make sure the phone fills most of the frame and try again.",
+      blurry:     "That photo is out of focus or too dark. Hold the camera steady and try again.",
+      dirty:      "The surface has too many fingerprints or smudges — give it a quick wipe and retake the photo.",
+    };
+
+    if (validation in rejectMessages) {
       await removeLastImage(relPath);
-      const sideLabel = side === "frame" ? "sides/edges" : side;
       await ctx.reply(
-        `That doesn't look like the ${sideLabel} of the device. Please send a ${sideLabel} photo.`,
+        rejectMessages[validation],
         { reply_markup: doneButton(`Done — ${side} photos collected`, `device:done_${side}`) }
       );
       return;
@@ -1638,7 +1644,7 @@ async function handleDevicePhoto(ctx: any, assessmentId: string, side: ImageSide
 
     if (validation === "unclear") {
       await ctx.reply(
-        `Photo ${count} saved (could not verify the side — send a clearer photo if needed). Tap Done when ready.`,
+        `Photo ${count} saved (couldn't fully verify — send a clearer one if needed). Tap Done when ready.`,
         { reply_markup: doneButton(`Done — ${side} photos collected`, `device:done_${side}`) }
       );
     } else {
