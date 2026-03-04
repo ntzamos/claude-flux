@@ -699,6 +699,7 @@ const BOT_COMMANDS = [
   { command: "botinfo", description: "Bot configuration & status" },
   { command: "userinfo", description: "Your user info" },
   { command: "restart", description: "Restart the bot" },
+  { command: "update", description: "Pull latest code from git and restart" },
   { command: "tunnel", description: "Enable/disable remote dashboard access (/tunnel on|off|status)" },
   { command: "detect", description: "Detect defects in an image — send as caption with a photo" },
   { command: "fetch", description: "Fetch a webpage and return its content as markdown — /fetch <url>" },
@@ -812,6 +813,28 @@ bot.command("userinfo", async (ctx) => {
 bot.command("restart", async (ctx) => {
   await ctx.reply("Restarting...");
   setTimeout(() => process.exit(0), 500);
+});
+
+bot.command("update", async (ctx) => {
+  await ctx.reply("Pulling latest code...");
+  try {
+    const pull = spawn(["git", "pull"], {
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: "/home/relay/app",
+    });
+    const out = await new Response(pull.stdout).text();
+    const err = await new Response(pull.stderr).text();
+    const code = await pull.exited;
+    if (code !== 0) {
+      await ctx.reply(`git pull failed:\n${err || out}`);
+      return;
+    }
+    await ctx.reply(`${out.trim()}\n\nRestarting...`);
+    setTimeout(() => process.exit(0), 500);
+  } catch (e) {
+    await ctx.reply(`Update failed: ${e}`);
+  }
 });
 
 const getTunnelStatus = async (): Promise<{ enabled: boolean; url: string | null }> => {
