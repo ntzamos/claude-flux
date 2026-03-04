@@ -1253,7 +1253,7 @@ bot.on("message:photo", async (ctx) => {
 
       // Claude Code can see images via file path
       const rawCaption = ctx.message.caption || "";
-      const isDetect = rawCaption.trim().toLowerCase().startsWith("/detect");
+      const isDetect = rawCaption.toLowerCase().includes("/detect");
 
       const [memoryContext, recentHistory] = await Promise.all([
         isDetect ? Promise.resolve("") : getMemoryContext(),
