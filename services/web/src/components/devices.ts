@@ -41,7 +41,7 @@ export async function renderDevices(): Promise<string> {
     const imageCount = (a.front_count || 0) + (a.back_count || 0) + (a.frame_count || 0);
 
     return `
-    <tr style="cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:rgba(255,255,255,0.05)" onclick="openDeviceModal('${a.id}')">
+    <tr>
       <td class="col-id"><code style="font-size:0.78rem;color:var(--muted)">${a.id.slice(0, 8)}</code></td>
       <td>${device.replace(/</g, "&lt;").slice(0, 35)}</td>
       <td class="col-imei" style="color:var(--muted)">${(a.imei || "—").replace(/</g, "&lt;")}</td>
@@ -49,10 +49,11 @@ export async function renderDevices(): Promise<string> {
       <td>${gradeBadge(a.overall_grade)}</td>
       <td class="col-photos" style="color:var(--muted);text-align:center">${imageCount}</td>
       <td style="color:var(--muted);white-space:nowrap">${date}</td>
-      <td onclick="event.stopPropagation()">
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="openDeviceModal('${a.id}')" style="touch-action:manipulation;margin-right:0.4rem">View</button>
         <form method="POST" action="/api/devices/${a.id}/delete" style="display:inline"
               onsubmit="return confirm('Delete this assessment and all its images?')">
-          <button class="btn btn-sm" style="background:rgba(255,82,82,0.12);color:#ff7070;border:1px solid rgba(255,82,82,0.25)">Delete</button>
+          <button class="btn btn-sm" style="background:rgba(255,82,82,0.12);color:#ff7070;border:1px solid rgba(255,82,82,0.25);touch-action:manipulation">Delete</button>
         </form>
       </td>
     </tr>`;

@@ -26,7 +26,7 @@ if (!existsSync(inputPath)) {
 
 try {
   await (sharp as any)(inputPath)
-    .clahe({ width: 8, height: 8, maxSlope: 3 })
+    .clahe({ width: 8, height: 8, maxSlope: 2 })
     .jpeg({ quality: 95 })
     .toFile(outputPath);
   console.log(`CLAHE image saved to ${outputPath}`);
