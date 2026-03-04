@@ -1360,12 +1360,14 @@ function buildPrompt(
       `\nURL: ${url}` +
       "\n" +
       "\nSTEP 1 — FETCH the webpage using the Bash tool:" +
-      "\n  Run: curl -s -L --max-time 15 -A 'Mozilla/5.0' '<URL>' (replace <URL> with the actual URL)" +
-      "\n  If curl fails or returns empty, try with: curl -s -L --max-time 15 '<URL>'" +
+      "\n  PRIMARY: Run: curl -s -L --max-time 30 -H 'Accept: text/markdown' 'https://r.jina.ai/<URL>'" +
+      "\n  (replace <URL> with the actual URL — jina.ai reader renders JS-heavy sites and returns markdown)" +
+      "\n  FALLBACK (if jina returns empty or errors): curl -s -L --max-time 15 -A 'Mozilla/5.0' '<URL>'" +
       "\n" +
       "\nSTEP 2 — CONVERT to markdown:" +
-      "\n  Parse the HTML response. Extract the main content (title, headings, paragraphs, lists, links)." +
-      "\n  Strip nav bars, footers, ads, scripts, and boilerplate. Keep the meaningful content." +
+      "\n  If you used jina.ai, the response is already markdown — use it directly." +
+      "\n  If you used raw curl, parse the HTML: extract title, headings, paragraphs, lists, links." +
+      "\n  Strip nav bars, footers, ads, scripts, and boilerplate. Keep meaningful content." +
       "\n  Format it as clean markdown." +
       "\n" +
       "\nSTEP 3 — SAVE to file:" +
