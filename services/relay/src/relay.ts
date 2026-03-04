@@ -1774,7 +1774,9 @@ bot.start({
   onStart: async () => {
     console.log("Bot is running!");
     // Register commands in Telegram menu
-    await bot.api.setMyCommands(BOT_COMMANDS).catch(() => {});
+    await bot.api.setMyCommands(BOT_COMMANDS)
+      .then(() => console.log(`[bot] Registered ${BOT_COMMANDS.length} commands with Telegram.`))
+      .catch((e) => console.error("[bot] setMyCommands failed:", e.message));
     // Replay any messages that were queued before the last restart
     recoverPendingMessages().catch((e) => console.error("[queue] Recovery error:", e));
     if (ALLOWED_USER_ID) {
