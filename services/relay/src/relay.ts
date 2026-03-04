@@ -1433,7 +1433,7 @@ function buildPrompt(
     "\nNEVER use 'claude mcp add' — it writes to a project-scoped file that is not visible to the dashboard."
   );
 
-  if (userMessage.startsWith("/detect ")) {
+  if (userMessage.toLowerCase().includes("/detect ")) {
     const imgPath = userMessage.slice(8).trim();
     parts.push(
       "\nDEFECT DETECTION TASK:" +
