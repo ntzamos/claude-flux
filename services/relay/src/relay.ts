@@ -35,6 +35,7 @@ import {
   runFullGrading,
   listAssessments,
   getGradingRulebook,
+  lookupImei,
   type ImageSide,
 } from "./devices.ts";
 
@@ -603,6 +604,44 @@ async function handleClaudeResponse(
   if (process.env.DATABASE_URL) syncMcpConfig().catch(() => {});
 }
 
+// ============================================================
+// MENU SYSTEM
+// ============================================================
+
+function mainMenuKeyboard() {
+  return new InlineKeyboard()
+    .text("📊 Info", "menu:info").text("🔧 System", "menu:system").row()
+    .text("📋 Content", "menu:content").text("🛠 Tools", "menu:tools");
+}
+function infoMenuKeyboard() {
+  return new InlineKeyboard()
+    .text("🤖 Bot Info", "menu:botinfo").row()
+    .text("👤 User Info", "menu:userinfo").row()
+    .text("🔗 Session", "menu:session").row()
+    .text("⬅️ Back", "menu:main");
+}
+function systemMenuKeyboard() {
+  return new InlineKeyboard()
+    .text("🔄 Restart", "menu:restart").row()
+    .text("⬆️ Update", "menu:update").row()
+    .text("🌐 Tunnel", "menu:tunnel").row()
+    .text("⬅️ Back", "menu:main");
+}
+function contentMenuKeyboard() {
+  return new InlineKeyboard()
+    .text("⏰ Tasks", "menu:tasks").row()
+    .text("🧠 Memory", "menu:memory").row()
+    .text("🔌 MCP Servers", "menu:mcps").row()
+    .text("⬅️ Back", "menu:main");
+}
+function toolsMenuKeyboard() {
+  return new InlineKeyboard()
+    .text("📱 Grade Device", "menu:device").row()
+    .text("🎙 Call Me", "menu:callme").row()
+    .text("🌐 Fetch URL", "menu:fetch").row()
+    .text("⬅️ Back", "menu:main");
+}
+
 // Callback query handler — processes confirm/cancel button taps
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
@@ -830,6 +869,177 @@ bot.on("callback_query:data", async (ctx) => {
   }
   // ── End device callbacks ─────────────────────────────────────
 
+  // ── Menu navigation ───────────────────────────────────────────
+  if (data === "menu:main") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageText("🤖 Main Menu\n\nChoose a category:", { reply_markup: mainMenuKeyboard() }); }
+    catch { await ctx.reply("🤖 Main Menu\n\nChoose a category:", { reply_markup: mainMenuKeyboard() }); }
+    return;
+  }
+  if (data === "menu:info") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageText("📊 Info\n\nWhat would you like to know?", { reply_markup: infoMenuKeyboard() }); }
+    catch { await ctx.reply("📊 Info\n\nWhat would you like to know?", { reply_markup: infoMenuKeyboard() }); }
+    return;
+  }
+  if (data === "menu:system") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageText("🔧 System\n\nManage your bot:", { reply_markup: systemMenuKeyboard() }); }
+    catch { await ctx.reply("🔧 System\n\nManage your bot:", { reply_markup: systemMenuKeyboard() }); }
+    return;
+  }
+  if (data === "menu:content") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageText("📋 Content\n\nView your data:", { reply_markup: contentMenuKeyboard() }); }
+    catch { await ctx.reply("📋 Content\n\nView your data:", { reply_markup: contentMenuKeyboard() }); }
+    return;
+  }
+  if (data === "menu:tools") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageText("🛠 Tools\n\nPowerful tools at your fingertips:", { reply_markup: toolsMenuKeyboard() }); }
+    catch { await ctx.reply("🛠 Tools\n\nPowerful tools at your fingertips:", { reply_markup: toolsMenuKeyboard() }); }
+    return;
+  }
+
+  // ── Menu actions ──────────────────────────────────────────────
+  if (data === "menu:botinfo") {
+    await ctx.answerCallbackQuery();
+    const status = await checkStartupStatus();
+    const lines = ["🤖 Bot Info", "", `Claude: ${CLAUDE_PATH}`, `Project dir: ${PROJECT_DIR || "(relay dir)"}`, `Relay dir: ${RELAY_DIR}`, "", status];
+    await ctx.reply(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Info", "menu:info").text("🏠 Menu", "menu:main") });
+    return;
+  }
+  if (data === "menu:userinfo") {
+    await ctx.answerCallbackQuery();
+    const lines = ["👤 User Info", "", `ID: ${ctx.from?.id}`, `Name: ${USER_NAME || ctx.from?.first_name || "not set"}`, `Timezone: ${USER_TIMEZONE}`];
+    if (ctx.from?.username) lines.push(`Username: @${ctx.from.username}`);
+    await ctx.reply(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Info", "menu:info").text("🏠 Menu", "menu:main") });
+    return;
+  }
+  if (data === "menu:session") {
+    await ctx.answerCallbackQuery();
+    const s = await loadSession();
+    const lines = ["🔗 Session", "", `ID: ${s.sessionId || "none"}`];
+    if (s.lastActivity) {
+      const last = new Date(s.lastActivity).toLocaleString("en-US", { timeZone: USER_TIMEZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      lines.push(`Last activity: ${last}`);
+    }
+    await ctx.reply(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Info", "menu:info").text("🏠 Menu", "menu:main") });
+    return;
+  }
+  if (data === "menu:restart") {
+    await ctx.answerCallbackQuery("Restarting...");
+    await ctx.reply("🔄 Restarting...");
+    setTimeout(() => process.exit(0), 500);
+    return;
+  }
+  if (data === "menu:update") {
+    await ctx.answerCallbackQuery("Pulling latest code...");
+    await ctx.reply("⬆️ Pulling latest code...");
+    try {
+      const pull = spawn(["git", "pull"], { stdout: "pipe", stderr: "pipe", cwd: "/home/relay/app" });
+      const out = await new Response(pull.stdout).text();
+      const err = await new Response(pull.stderr).text();
+      const code = await pull.exited;
+      if (code !== 0) { await ctx.reply(`git pull failed:\n${err || out}`); return; }
+      await ctx.reply(`${out.trim()}\n\nRestarting...`);
+      setTimeout(() => process.exit(0), 500);
+    } catch (e) { await ctx.reply(`Update failed: ${e}`); }
+    return;
+  }
+  if (data === "menu:tunnel") {
+    await ctx.answerCallbackQuery();
+    await sendTunnelStatus(ctx);
+    return;
+  }
+  if (data === "menu:tasks") {
+    await ctx.answerCallbackQuery();
+    try {
+      const tasks = await sql`SELECT description, schedule_type, next_run_at, interval_minutes, run_count FROM scheduled_tasks WHERE status = 'active' ORDER BY next_run_at ASC`;
+      if (!tasks || tasks.length === 0) {
+        await ctx.reply("No active scheduled tasks.", { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+        return;
+      }
+      const lines = [`⏰ ${tasks.length} active task(s):`, ""];
+      for (const t of tasks) {
+        const next = new Date(t.next_run_at).toLocaleString("en-US", { timeZone: USER_TIMEZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        const typeLabel = t.schedule_type === "interval" ? `every ${t.interval_minutes}min` : t.schedule_type;
+        lines.push(`• ${t.description}`);
+        lines.push(`  ${typeLabel} · next: ${next} · runs: ${t.run_count}`);
+      }
+      await ctx.reply(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+    } catch (err: any) { await ctx.reply(`Error: ${err.message}`); }
+    return;
+  }
+  if (data === "menu:memory") {
+    await ctx.answerCallbackQuery();
+    try {
+      const items = await sql`SELECT type, content, priority FROM memory WHERE type != 'completed_goal' ORDER BY type, priority DESC, created_at ASC`;
+      if (!items || items.length === 0) {
+        await ctx.reply("No memory items stored.", { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+        return;
+      }
+      const grouped: Record<string, string[]> = {};
+      for (const item of items) {
+        if (!grouped[item.type]) grouped[item.type] = [];
+        grouped[item.type].push(`• ${item.content}`);
+      }
+      const lines: string[] = [`🧠 ${items.length} memory item(s):`, ""];
+      for (const [type, entries] of Object.entries(grouped)) {
+        lines.push(type.toUpperCase());
+        lines.push(...entries);
+        lines.push("");
+      }
+      await ctx.reply(lines.join("\n").trim(), { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+    } catch (err: any) { await ctx.reply(`Error: ${err.message}`); }
+    return;
+  }
+  if (data === "menu:mcps") {
+    await ctx.answerCallbackQuery();
+    try {
+      const servers = await sql`SELECT name, type, command, args, url, enabled FROM mcp_servers ORDER BY name`;
+      if (!servers || servers.length === 0) {
+        await ctx.reply("No MCP servers configured.", { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+        return;
+      }
+      const lines = [`🔌 ${servers.length} MCP server(s):`, ""];
+      for (const s of servers) {
+        const status = s.enabled ? "✓" : "✗";
+        const detail = s.type === "sse" ? s.url : [s.command, ...(s.args ?? [])].join(" ");
+        lines.push(`${status} ${s.name} (${s.type})`);
+        lines.push(`  ${detail}`);
+      }
+      await ctx.reply(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+    } catch (err: any) { await ctx.reply(`Error: ${err.message}`); }
+    return;
+  }
+  if (data === "menu:device") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const keyboard = new InlineKeyboard()
+      .text("New Assessment", "device:new").row()
+      .text("Continue Current", "device:continue")
+      .text("Cancel Current", "device:cancel");
+    await ctx.reply("📱 Device Grading\n\nCollect front, back, and frame photos for A/B/C/D defect grading.", { reply_markup: keyboard });
+    return;
+  }
+  if (data === "menu:callme") {
+    await ctx.answerCallbackQuery();
+    const agentId = process.env.ELEVENLABS_AGENT_ID;
+    if (!agentId) {
+      await ctx.reply("🎙 Call Me is not configured. Set ELEVENLABS_AGENT_ID in your environment.", { reply_markup: new InlineKeyboard().text("⬅️ Tools", "menu:tools").text("🏠 Menu", "menu:main") });
+      return;
+    }
+    await ctx.reply("🎙 Send /callme with a brief (e.g. /callme check in on my goals) to start an AI phone call.", { reply_markup: new InlineKeyboard().text("⬅️ Tools", "menu:tools").text("🏠 Menu", "menu:main") });
+    return;
+  }
+  if (data === "menu:fetch") {
+    await ctx.answerCallbackQuery();
+    await ctx.reply("🌐 Send /fetch <url> to fetch a webpage and get its content as markdown.\n\nExample: /fetch https://example.com", { reply_markup: new InlineKeyboard().text("⬅️ Tools", "menu:tools").text("🏠 Menu", "menu:main") });
+    return;
+  }
+  // ── End menu callbacks ────────────────────────────────────────
+
   if (data.startsWith("confirm:")) {
     const key = data.replace("confirm:", "");
     const pending = pendingActions.get(key);
@@ -954,8 +1164,6 @@ bot.command("start", async (ctx) => {
   const msg = [
     `Hey ${name} 👋 I'm your personal AI assistant, powered by Claude.`,
     "",
-    "Here's what I can do for you:",
-    "",
     "🧠 Answer questions, brainstorm ideas, write and review code",
     "📋 Remember facts, goals, and preferences across conversations",
     "⏰ Set reminders and schedule recurring tasks",
@@ -963,10 +1171,9 @@ bot.command("start", async (ctx) => {
     "🎙 Transcribe voice messages",
     "🌐 Browse the web, run code, and use connected tools",
     "",
-    "Just send me a message to get started — no commands needed.",
-    "Use /help to see all available commands.",
+    "Just send me a message to get started, or tap a button below.",
   ].join("\n");
-  await ctx.reply(msg);
+  await ctx.reply(msg, { reply_markup: mainMenuKeyboard() });
 });
 
 bot.command("help", async (ctx) => {
@@ -1410,12 +1617,25 @@ bot.on("message:text", async (ctx) => {
         return;
       }
     } else if (deviceState.current_step === "pending_imei") {
-      await sql`UPDATE device_assessments SET imei = ${text.trim()}, updated_at = NOW() WHERE id = ${deviceState.assessment_id}`;
-      await advanceStep(ctx.chat!.id, "pending_info");
-      await ctx.reply(
-        "IMEI saved. What device is this? (e.g. iPhone 14 Pro 256GB) Or tap Skip.",
-        { reply_markup: new InlineKeyboard().text("Skip Info", "device:skip_info") }
-      );
+      const imei = text.trim();
+      await sql`UPDATE device_assessments SET imei = ${imei}, updated_at = NOW() WHERE id = ${deviceState.assessment_id}`;
+      const deviceObj = await lookupImei(imei);
+      if (deviceObj) {
+        const description = [deviceObj.brand, deviceObj.model].filter(Boolean).join(" ").trim() || null;
+        const info = { ...deviceObj, ...(description ? { description } : {}) };
+        await sql`UPDATE device_assessments SET device_info = ${JSON.stringify(info)}, updated_at = NOW() WHERE id = ${deviceState.assessment_id}`;
+        await advanceStep(ctx.chat!.id, "collecting_front");
+        await ctx.reply(
+          `IMEI saved. Device identified: *${description || "Unknown"}*\n\nNow send FRONT photos of the device.`,
+          { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("Done — front photos collected", "device:done_front") }
+        );
+      } else {
+        await advanceStep(ctx.chat!.id, "pending_info");
+        await ctx.reply(
+          "IMEI saved. What device is this? (e.g. iPhone 14 Pro 256GB) Or tap Skip.",
+          { reply_markup: new InlineKeyboard().text("Skip Info", "device:skip_info") }
+        );
+      }
       return;
     } else if (deviceState.current_step === "pending_info") {
       await sql`UPDATE device_assessments SET device_info = ${JSON.stringify({ description: text.trim() })}, updated_at = NOW() WHERE id = ${deviceState.assessment_id}`;
