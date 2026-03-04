@@ -994,6 +994,65 @@ bot.command("callme", async (ctx) => {
 });
 
 // ============================================================
+// /fetch command — fetches URL via jina.ai, saves to /files/, asks Claude to summarize
+// ============================================================
+
+bot.command("fetch", async (ctx) => {
+  const url = ctx.match?.trim();
+  if (!url) {
+    await ctx.reply("Usage: /fetch <url>");
+    return;
+  }
+
+  const thinkingMsg = await ctx.reply("Fetching…");
+  await ctx.replyWithChatAction("typing");
+
+  try {
+    // Fetch via jina.ai reader — handles JS-rendered pages
+    const jinaUrl = `https://r.jina.ai/${url.startsWith("http") ? url : "https://" + url}`;
+    const res = await fetch(jinaUrl, {
+      headers: { "Accept": "text/markdown" },
+      signal: AbortSignal.timeout(30000),
+    });
+    const markdown = await res.text();
+
+    if (!markdown || markdown.trim().length < 50) {
+      await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
+      await ctx.reply("Could not fetch the page — it may be unavailable or blocking scrapers.");
+      return;
+    }
+
+    // Save to /files/
+    const domain = url.replace(/^https?:\/\//, "").split("/")[0].replace(/\W+/g, "-");
+    const date = new Date().toISOString().slice(0, 10);
+    const fileName = `fetch-${domain}-${date}.md`;
+    const filePath = `/files/${fileName}`;
+    await writeFile(filePath, markdown);
+
+    // Ask Claude to summarize
+    const [memoryContext, recentHistory] = await Promise.all([
+      getMemoryContext(),
+      getRecentHistory(),
+    ]);
+    await saveMessage("user", `/fetch ${url}`);
+
+    const summaryPrompt = buildPrompt(
+      `The user fetched ${url}. Here is the page content in markdown:\n\n${markdown.slice(0, 6000)}\n\nWrite a concise plain-text summary (3-5 sentences) of what this page is about. End with: "Saved as ${fileName}"\nAlso output on its own line: [FILE: ${fileName}]`,
+      undefined, memoryContext, recentHistory
+    );
+    const claudeResponse = await callClaude(summaryPrompt, { resume: true });
+
+    await saveMessage("assistant", claudeResponse);
+    await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
+    await handleClaudeResponse(ctx, claudeResponse, {});
+  } catch (error: any) {
+    console.error("[fetch] Error:", error);
+    await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
+    await ctx.reply(`Fetch failed: ${error?.message || "unknown error"}`);
+  }
+});
+
+// ============================================================
 // QUEUE RECOVERY — replays pending text messages after restart
 // ============================================================
 
@@ -1353,34 +1412,7 @@ function buildPrompt(
     "\nNEVER use 'claude mcp add' — it writes to a project-scoped file that is not visible to the dashboard."
   );
 
-  if (userMessage.startsWith("/fetch ")) {
-    const url = userMessage.slice(7).trim();
-    parts.push(
-      "\nFETCH TASK:" +
-      `\nURL: ${url}` +
-      "\n" +
-      "\nSTEP 1 — FETCH the webpage using the Bash tool:" +
-      `\n  PRIMARY: Run exactly: curl -s -L --max-time 30 -H 'Accept: text/markdown' 'https://r.jina.ai/${url}'` +
-      "\n  jina.ai renders JS-heavy sites and returns clean markdown. Use the output directly." +
-      `\n  FALLBACK (if jina returns empty or an error): curl -s -L --max-time 15 -A 'Mozilla/5.0' '${url}'` +
-      "\n" +
-      "\nSTEP 2 — CONVERT to markdown:" +
-      "\n  If you used jina.ai, the response is already markdown — use it directly." +
-      "\n  If you used raw curl, parse the HTML: extract title, headings, paragraphs, lists, links." +
-      "\n  Strip nav bars, footers, ads, scripts, and boilerplate. Keep meaningful content." +
-      "\n  Format it as clean markdown." +
-      "\n" +
-      "\nSTEP 3 — SAVE to file:" +
-      "\n  Generate a filename from the URL domain + timestamp, e.g. fetch-example-com-2026-03-04.md" +
-      "\n  Save the markdown to /files/<filename>" +
-      "\n  Output the tag: [FILE: <filename>]" +
-      "\n" +
-      "\nSTEP 4 — REPLY:" +
-      "\n  Give a brief plain-text summary of what the page is about (2-3 sentences)." +
-      "\n  Tell the user the file has been saved."
-    );
-    parts.push(`\nUser: Fetch this URL and return the content as markdown: ${url}`);
-  } else if (userMessage.startsWith("/detect ")) {
+  if (userMessage.startsWith("/detect ")) {
     const imgPath = userMessage.slice(8).trim();
     parts.push(
       "\nDEFECT DETECTION TASK:" +
