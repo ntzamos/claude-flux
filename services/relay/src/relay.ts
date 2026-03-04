@@ -1254,20 +1254,22 @@ bot.on("message:photo", async (ctx) => {
       // Claude Code can see images via file path
       const rawCaption = ctx.message.caption || "";
       const isDetect = rawCaption.trim().toLowerCase().startsWith("/detect");
-      const caption = isDetect
-        ? `/detect ${filePath}`
-        : rawCaption || "Analyze this image.";
-      const prompt = `[Image: ${filePath}]\n\n${caption}`;
 
       const [memoryContext, recentHistory] = await Promise.all([
         isDetect ? Promise.resolve("") : getMemoryContext(),
         isDetect ? Promise.resolve("") : getRecentHistory(),
       ]);
 
-      await saveMessage("user", `[Image]: ${caption}`);
+      await saveMessage("user", `[Image]: ${rawCaption || "Analyze this image."}`);
+
+      // For /detect, pass "/detect <path>" as the userMessage so buildPrompt
+      // recognises it. For regular photos, wrap with [Image: path].
+      const userMessage = isDetect
+        ? `/detect ${filePath}`
+        : `[Image: ${filePath}]\n\n${rawCaption || "Analyze this image."}`;
 
       const claudeResponse = await callClaude(
-        buildPrompt(prompt, undefined, memoryContext, recentHistory),
+        buildPrompt(userMessage, undefined, memoryContext, recentHistory),
         { resume: true }
       );
 
@@ -1780,9 +1782,19 @@ bot.start({
     // Replay any messages that were queued before the last restart
     recoverPendingMessages().catch((e) => console.error("[queue] Recovery error:", e));
     if (ALLOWED_USER_ID) {
-      // Delay 3s to let ngrok register its URL before we send the dashboard link
+      // Delay 3s to let ngrok register its URL before we send the dashboard link.
+      // Debounce: skip if another instance already sent a startup message in the last 60s.
       setTimeout(async () => {
         try {
+          const now = Date.now();
+          const rows = await sql`SELECT value FROM settings WHERE key = 'LAST_STARTUP_MSG_AT'`;
+          const last = rows[0]?.value ? parseInt(rows[0].value) : 0;
+          if (now - last < 60_000) {
+            console.log("[bot] Startup message suppressed (sent recently).");
+            return;
+          }
+          await sql`INSERT INTO settings (key, value, updated_at) VALUES ('LAST_STARTUP_MSG_AT', ${String(now)}, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
           const status = await checkStartupStatus();
           await bot.api.sendMessage(ALLOWED_USER_ID, status);
         } catch (err) {
