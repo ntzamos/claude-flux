@@ -1008,26 +1008,21 @@ bot.command("fetch", async (ctx) => {
   await ctx.replyWithChatAction("typing");
 
   try {
-    // Fetch via jina.ai reader — handles JS-rendered pages
-    const jinaUrl = `https://r.jina.ai/${url.startsWith("http") ? url : "https://" + url}`;
-    const res = await fetch(jinaUrl, {
-      headers: { "Accept": "text/markdown" },
-      signal: AbortSignal.timeout(30000),
-    });
-    const markdown = await res.text();
+    // Delegate to actions/url_to_md.sh — fetches via jina.ai, saves to /files/, returns path
+    const scriptPath = "/home/relay/app/actions/url_to_md.sh";
+    const proc = spawn(["bash", scriptPath, url], { stdout: "pipe", stderr: "pipe" });
+    const filePath = (await new Response(proc.stdout).text()).trim();
+    const stderr = (await new Response(proc.stderr).text()).trim();
+    const exitCode = await proc.exited;
 
-    if (!markdown || markdown.trim().length < 50) {
+    if (exitCode !== 0 || !filePath) {
       await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
-      await ctx.reply("Could not fetch the page — it may be unavailable or blocking scrapers.");
+      await ctx.reply(`Could not fetch the page: ${stderr || "unknown error"}`);
       return;
     }
 
-    // Save to /files/
-    const domain = url.replace(/^https?:\/\//, "").split("/")[0].replace(/\W+/g, "-");
-    const date = new Date().toISOString().slice(0, 10);
-    const fileName = `fetch-${domain}-${date}.md`;
-    const filePath = `/files/${fileName}`;
-    await writeFile(filePath, markdown);
+    const fileName = filePath.split("/").pop()!;
+    const markdown = await readFile(filePath, "utf-8");
 
     // Ask Claude to summarize
     const [memoryContext, recentHistory] = await Promise.all([
