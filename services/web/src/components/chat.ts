@@ -38,7 +38,11 @@ export async function renderChat(page = 1): Promise<string> {
     const time = new Date(m.created_at).toLocaleString("en-US", {
       month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
     });
-    const content = m.content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const escaped = m.content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const content = escaped.replace(/\[FILE:\s*([^\]]+)\]/gi, (_, fn) => {
+      const name = fn.trim();
+      return `<a href="/files/${name}" style="color:var(--accent);text-decoration:underline" target="_blank">File: ${name}</a>`;
+    });
 
     return isUser
       ? `
@@ -113,6 +117,7 @@ export async function renderChat(page = 1): Promise<string> {
   }
 
   const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const renderMsg = s => esc(s).replace(/\[FILE:\s*([^\]]+)\]/gi, (_, fn) => '<a href="/files/' + fn.trim() + '" style="color:var(--accent);text-decoration:underline" target="_blank">File: ' + fn.trim() + '</a>');
   const fmt = d => d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 
   const list   = document.getElementById('messages-list');
@@ -125,7 +130,7 @@ export async function renderChat(page = 1): Promise<string> {
   function makeBubble(m) {
     const isUser = m.role === 'user';
     const time = fmt(new Date(m.created_at));
-    const content = esc(m.content);
+    const content = renderMsg(m.content);
     const div = document.createElement('div');
     if (isUser) {
       div.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:0.75rem';
