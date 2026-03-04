@@ -1370,11 +1370,9 @@ function buildPrompt(
       "\nThe script must:" +
       "\n  a) Load the image from the path above" +
       "\n  b) For each defect found, draw a red rectangle (lineWidth=4) and a red label above it (font: bold 28px sans-serif, white text on red background)" +
-      "\n  c) For the worst defect, add a 2.4x zoomed inset in the bottom-right corner with a yellow border" +
-      "\n  d) Save the result as JPEG to /files/defect-annotated.jpg" +
+      "\n  c) Save the result as JPEG to /files/defect-annotated.jpg" +
       "\nAfter running the script, you MUST use the Read tool to open /files/defect-annotated.jpg and visually verify:" +
       "\n  - Is the red bounding box correctly placed over the defect?" +
-      "\n  - Does the zoomed inset clearly show the defect?" +
       "\nIf the bbox is off or misses the defect, adjust the x/y/w/h coordinates and re-run. Repeat up to 3 times until the annotation is visually accurate." +
       "\nOnly proceed to Step 3 once you are confident the bbox is correctly placed." +
       "\n" +
