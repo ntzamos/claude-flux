@@ -225,7 +225,6 @@ export async function renderDevices(): Promise<string> {
         document.getElementById('dm-grade').textContent = '—';
         document.getElementById('dm-grade').style.color = 'var(--muted)';
         document.getElementById('dm-status-badge').innerHTML = '';
-        document.getElementById('dm-imei').textContent = '';
         document.getElementById('dm-date').textContent = '';
 
         try {
@@ -233,7 +232,6 @@ export async function renderDevices(): Promise<string> {
           var data = await res.json();
           if (data.error) throw new Error(data.error);
           document.getElementById('dm-device').textContent = (data.device_info && data.device_info.description) || 'Unknown device';
-          document.getElementById('dm-imei').textContent = data.imei || '—';
           document.getElementById('dm-status-badge').innerHTML = statusBadgeHtml(data.status);
           document.getElementById('dm-date').textContent = new Date(data.created_at).toLocaleString();
           var g = data.overall_grade;
