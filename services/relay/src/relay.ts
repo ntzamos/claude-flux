@@ -700,6 +700,7 @@ const BOT_COMMANDS = [
   { command: "restart", description: "Restart the bot" },
   { command: "tunnel", description: "Enable/disable remote dashboard access (/tunnel on|off|status)" },
   { command: "detect", description: "Detect defects in an image — send as caption with a photo" },
+  { command: "fetch", description: "Fetch a webpage and return its content as markdown — /fetch <url>" },
   { command: "newsession", description: "Clear current Claude session and start fresh" },
 ];
 
@@ -1352,7 +1353,32 @@ function buildPrompt(
     "\nNEVER use 'claude mcp add' — it writes to a project-scoped file that is not visible to the dashboard."
   );
 
-  if (userMessage.startsWith("/detect ")) {
+  if (userMessage.startsWith("/fetch ")) {
+    const url = userMessage.slice(7).trim();
+    parts.push(
+      "\nFETCH TASK:" +
+      `\nURL: ${url}` +
+      "\n" +
+      "\nSTEP 1 — FETCH the webpage using the Bash tool:" +
+      "\n  Run: curl -s -L --max-time 15 -A 'Mozilla/5.0' '<URL>' (replace <URL> with the actual URL)" +
+      "\n  If curl fails or returns empty, try with: curl -s -L --max-time 15 '<URL>'" +
+      "\n" +
+      "\nSTEP 2 — CONVERT to markdown:" +
+      "\n  Parse the HTML response. Extract the main content (title, headings, paragraphs, lists, links)." +
+      "\n  Strip nav bars, footers, ads, scripts, and boilerplate. Keep the meaningful content." +
+      "\n  Format it as clean markdown." +
+      "\n" +
+      "\nSTEP 3 — SAVE to file:" +
+      "\n  Generate a filename from the URL domain + timestamp, e.g. fetch-example-com-2026-03-04.md" +
+      "\n  Save the markdown to /files/<filename>" +
+      "\n  Output the tag: [FILE: <filename>]" +
+      "\n" +
+      "\nSTEP 4 — REPLY:" +
+      "\n  Give a brief plain-text summary of what the page is about (2-3 sentences)." +
+      "\n  Tell the user the file has been saved."
+    );
+    parts.push(`\nUser: Fetch this URL and return the content as markdown: ${url}`);
+  } else if (userMessage.startsWith("/detect ")) {
     const imgPath = userMessage.slice(8).trim();
     parts.push(
       "\nDEFECT DETECTION TASK:" +
