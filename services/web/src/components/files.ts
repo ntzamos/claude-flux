@@ -190,6 +190,9 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
       <span id="preview-size" style="font-size:0.75rem;color:var(--muted);flex-shrink:0"></span>
       <a id="preview-download" href="#" download
          class="btn btn-outline btn-sm" style="text-decoration:none;flex-shrink:0">Download</a>
+      <button id="md-toggle-btn" onclick="toggleMdView()" style="display:none;background:none;
+              border:1px solid var(--border2);color:var(--muted);border-radius:6px;
+              padding:0.3rem 0.7rem;cursor:pointer;font-size:0.8rem;flex-shrink:0">Rendered</button>
       <button onclick="closePreview()"
               style="background:none;border:1px solid var(--border2);color:var(--muted);border-radius:6px;
                      padding:0.3rem 0.7rem;cursor:pointer;font-size:0.8rem;flex-shrink:0">✕ Close</button>
@@ -334,7 +337,7 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
 
     const images = ['jpg','jpeg','png','gif','webp','svg','bmp','ico','tiff','avif'];
     const pdfs   = ['pdf'];
-    const text   = ['txt','md','log','sh','py','ts','js','jsx','tsx','css','html','xml','toml','yaml','yml','ini','conf','env'];
+    const text   = ['txt','log','sh','py','ts','js','jsx','tsx','css','html','xml','toml','yaml','yml','ini','conf','env'];
     const json   = ['json'];
     const csv    = ['csv'];
     const video  = ['mp4','webm','mov','ogg'];
@@ -384,6 +387,16 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
         content.innerHTML = \`<pre>\${esc(raw)}</pre>\`;
       }).catch(e => { content.innerHTML = \`<pre>Error: \${esc(e.message)}</pre>\`; });
 
+    } else if (ext === 'md') {
+      fetch(url).then(r => r.text()).then(raw => {
+        window._mdRaw = raw;
+        window._mdRendered = false;
+        const btn = document.getElementById('md-toggle-btn');
+        btn.textContent = 'Rendered';
+        btn.style.display = '';
+        content.innerHTML = \`<pre>\${esc(raw)}</pre>\`;
+      }).catch(e => { content.innerHTML = \`<pre>Error: \${esc(e.message)}</pre>\`; });
+
     } else if (text.includes(ext)) {
       fetch(url).then(r => r.text()).then(raw => {
         content.innerHTML = \`<pre>\${esc(raw)}</pre>\`;
@@ -402,7 +415,36 @@ export async function renderFiles(currentPath: string = ""): Promise<string> {
   function closePreview() {
     document.getElementById('file-preview-modal').style.display = 'none';
     document.getElementById('preview-content').innerHTML = '';
+    document.getElementById('md-toggle-btn').style.display = 'none';
     document.body.style.overflow = '';
+    window._mdRaw = null;
+    window._mdRendered = false;
+  }
+
+  let _markedLoaded = false;
+  function loadMarked(cb) {
+    if (typeof marked !== 'undefined') { cb(); return; }
+    if (_markedLoaded) { const t = setInterval(() => { if (typeof marked !== 'undefined') { clearInterval(t); cb(); } }, 50); return; }
+    _markedLoaded = true;
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+
+  function toggleMdView() {
+    const btn = document.getElementById('md-toggle-btn');
+    const content = document.getElementById('preview-content');
+    window._mdRendered = !window._mdRendered;
+    if (window._mdRendered) {
+      btn.textContent = 'Plain text';
+      loadMarked(() => {
+        content.innerHTML = \`<div class="md-body" style="max-width:860px;width:100%;padding:0.5rem 0;font-size:0.88rem;line-height:1.7">\${marked.parse(window._mdRaw)}</div>\`;
+      });
+    } else {
+      btn.textContent = 'Rendered';
+      content.innerHTML = \`<pre>\${esc(window._mdRaw)}</pre>\`;
+    }
   }
 
   function toggleNewFolder() {
