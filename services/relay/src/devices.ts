@@ -60,6 +60,33 @@ export interface ImageResult {
 }
 
 // ============================================================
+// IMEI LOOKUP
+// ============================================================
+
+export async function lookupImei(imei: string): Promise<Record<string, unknown> | null> {
+  const url = process.env.IMEI_SERVICE_URL;
+  const key = process.env.IMEI_SERVICE_KEY;
+  if (!url || !key) return null;
+  try {
+    const response = await fetch(`${url}?service=0&imei=${imei.replaceAll(" ", "")}&key=${key}`);
+    const data = await response.json() as any;
+    if (data.success && data.object) {
+      const obj = data.object;
+      if (obj.brand === "Apple" && obj.model) {
+        obj.model = (obj.model.split("(")[0].trim()).replace("Apple ", "").trim();
+      }
+      if (obj.model && obj.brand && obj.model.includes(obj.brand)) {
+        obj.model = obj.model.split(obj.brand)[1].trim();
+      }
+      return obj;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================
 // STATE MACHINE
 // ============================================================
 
@@ -320,7 +347,13 @@ export async function runFullGrading(
   }
 
   // Use pre-computed results where available; run detect for any gaps
-  const precomputed = await getImageResults(assessment.id);
+  // Wait for any in-progress eager detects to finish (up to 3 minutes)
+  let precomputed = await getImageResults(assessment.id);
+  const deadline = Date.now() + 3 * 60 * 1000;
+  while (Date.now() < deadline && precomputed.some(r => r.status === "processing")) {
+    await new Promise(r => setTimeout(r, 2000));
+    precomputed = await getImageResults(assessment.id);
+  }
   const preMap = new Map(precomputed.map(r => [r.image_path, r]));
   const rulebook = await getGradingRulebook();
 
