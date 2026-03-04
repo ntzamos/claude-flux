@@ -68,22 +68,22 @@ export function layout(title: string, content: string, activeTab?: string, theme
   const a = (op: number) => `rgba(${r},${g},${b},${op})`;
 
   const tabs = [
-    { id: "status",   label: "Status",   icon: "◉" },
-    { id: "tasks",    label: "Tasks",    icon: "♧" },
-    { id: "chat",     label: "Chat",     icon: "▣" },
-    { id: "memory",   label: "Memory",   icon: "◈" },
-    { id: "lists",    label: "Lists",    icon: "☑" },
-    { id: "devices",  label: "Devices",  icon: "◫" },
-    { id: "rulebook", label: "Rulebook", icon: "◧" },
-    { id: "files",    label: "Files",    icon: "⌺" },
-    { id: "mcp",      label: "MCP",      icon: "⬡" },
-    { id: "commands", label: "Commands", icon: "⌘" },
-    { id: "settings", label: "Settings", icon: "⚙" },
+    { id: "status",   label: "Status",   icon: "activity" },
+    { id: "tasks",    label: "Tasks",    icon: "check-square" },
+    { id: "chat",     label: "Chat",     icon: "message-circle" },
+    { id: "memory",   label: "Memory",   icon: "brain" },
+    { id: "lists",    label: "Lists",    icon: "list" },
+    { id: "devices",  label: "Devices",  icon: "smartphone" },
+    { id: "rulebook", label: "Rulebook", icon: "book-open" },
+    { id: "files",    label: "Files",    icon: "folder" },
+    { id: "mcp",      label: "MCP",      icon: "plug" },
+    { id: "commands", label: "Commands", icon: "terminal" },
+    { id: "settings", label: "Settings", icon: "settings" },
   ];
 
   const navLinks = tabs.map(tab => {
     const active = tab.id === activeTab ? " active" : "";
-    return `<a href="/dashboard?tab=${tab.id}" class="tab-link${active}">${tab.icon}<span class="tab-label"> ${tab.label}</span></a>`;
+    return `<a href="/dashboard?tab=${tab.id}" class="tab-link${active}"><i data-lucide="${tab.icon}" class="tab-icon"></i><span class="tab-label"> ${tab.label}</span></a>`;
   }).join("\n");
 
   return `<!DOCTYPE html>
@@ -92,6 +92,7 @@ export function layout(title: string, content: string, activeTab?: string, theme
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${title} — Claude Flux</title>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <link rel="preload" href="/fonts/space-grotesk.woff2" as="font" type="font/woff2" crossorigin>
   <style>
     @font-face {
@@ -183,9 +184,13 @@ export function layout(title: string, content: string, activeTab?: string, theme
       text-transform: uppercase;
       letter-spacing: 0.1em;
       transition: color 0.15s, border-color 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
     }
     .tab-link:hover { color: var(--text); }
     .tab-link.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-icon { width: 13px; height: 13px; stroke-width: 2; flex-shrink: 0; }
 
     /* ── Main content ─────────────────────────────────── */
     .main { padding: 1.5rem 1.75rem; max-width: 1180px; margin: 0 auto; }
@@ -442,6 +447,8 @@ export function layout(title: string, content: string, activeTab?: string, theme
     }
   </style>
   <script>
+    // Init Lucide icons
+    if (typeof lucide !== 'undefined') lucide.createIcons();
     // Scroll to top on every tab load (prevent browser scroll restoration)
     history.scrollRestoration = 'manual';
     window.scrollTo(0, 0);

@@ -97,24 +97,19 @@ export async function renderDevices(): Promise<string> {
         modal.id = 'device-modal';
         modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;overflow-y:auto;';
         modal.innerHTML = \`
-          <div style="background:var(--surface);min-height:100vh;max-width:1100px;margin:0 auto;padding:1.5rem 2rem 3rem">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem;border-bottom:1px solid var(--border2);padding-bottom:1rem">
-              <div>
-                <div style="font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em">Assessment</div>
-                <div id="dm-id" style="font-family:monospace;font-size:0.85rem;margin-top:0.1rem;color:var(--muted)"></div>
-                <div id="dm-device" style="font-size:1.15rem;font-weight:600;margin-top:0.3rem"></div>
-                <div style="display:flex;gap:1rem;margin-top:0.4rem;align-items:center">
-                  <span style="font-size:0.75rem;color:var(--muted)">IMEI: <span id="dm-imei" style="color:var(--text)"></span></span>
+          <div style="background:var(--surface);min-height:100vh;max-width:900px;margin:0 auto;padding:1rem 1rem 3rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--border2);padding-bottom:0.75rem;gap:0.75rem">
+              <div style="min-width:0;flex:1">
+                <div id="dm-device" style="font-size:1rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+                <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.3rem;align-items:center">
                   <span id="dm-status-badge"></span>
-                  <span id="dm-date" style="font-size:0.72rem;color:var(--muted)"></span>
+                  <span id="dm-date" style="font-size:0.7rem;color:var(--muted)"></span>
                 </div>
+                <div id="dm-id" style="font-family:monospace;font-size:0.65rem;color:var(--muted);margin-top:0.2rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
               </div>
-              <div style="display:flex;align-items:center;gap:1rem">
-                <div style="text-align:center">
-                  <div style="font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Grade</div>
-                  <div id="dm-grade" style="font-size:2.5rem;font-weight:800;line-height:1"></div>
-                </div>
-                <button onclick="window.closeDeviceModal()" style="background:rgba(255,255,255,0.07);border:1px solid var(--border2);color:var(--text);cursor:pointer;font-size:1rem;padding:0.4rem 0.8rem;border-radius:6px">✕ Close</button>
+              <div style="display:flex;align-items:center;gap:0.75rem;flex-shrink:0">
+                <div id="dm-grade" style="font-size:2rem;font-weight:800;line-height:1"></div>
+                <button onclick="window.closeDeviceModal()" style="background:rgba(255,255,255,0.07);border:1px solid var(--border2);color:var(--text);cursor:pointer;font-size:0.85rem;padding:0.4rem 0.75rem;border-radius:6px;white-space:nowrap">✕ Close</button>
               </div>
             </div>
             <div id="dm-content"><div style="text-align:center;padding:3rem;color:var(--muted)">Loading…</div></div>
@@ -174,19 +169,22 @@ export async function renderDevices(): Promise<string> {
             var idx = i + 1;
             var annotatedPath = data.id ? 'devices/' + data.id + '/annotated_' + side + '_' + idx + '.jpg' : null;
 
-            html += '<div style="display:grid;grid-template-columns:140px 140px 1fr;gap:1rem;align-items:start;margin-bottom:1.25rem;padding:0.75rem;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid var(--border2)">';
-            html += '<div><div style="font-size:0.58rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.3rem">Original</div>';
+            // Photos side-by-side (2 cols) with detect text below — works on any screen
+            html += '<div style="margin-bottom:1rem;padding:0.75rem;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid var(--border2)">';
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.6rem">';
+            html += '<div><div style="font-size:0.58rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.25rem">Original</div>';
             html += '<a href="/files/' + encodeURI(imgPath) + '" target="_blank">';
-            html += '<img src="/files/' + encodeURI(imgPath) + '" style="width:140px;height:105px;object-fit:cover;border-radius:6px;border:1px solid var(--border2)">';
+            html += '<img src="/files/' + encodeURI(imgPath) + '" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;border:1px solid var(--border2)">';
             html += '</a></div>';
-            html += '<div><div style="font-size:0.58rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.3rem">Annotated</div>';
+            html += '<div><div style="font-size:0.58rem;color:var(--muted);text-transform:uppercase;margin-bottom:0.25rem">Annotated</div>';
             if (annotatedPath) {
               html += '<a href="/files/' + encodeURI(annotatedPath) + '" target="_blank">';
-              html += '<img src="/files/' + encodeURI(annotatedPath) + '" style="width:140px;height:105px;object-fit:cover;border-radius:6px;border:1px solid var(--border2)" onerror="this.style.display=\'none\'">';
+              html += '<img src="/files/' + encodeURI(annotatedPath) + '" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;border:1px solid var(--border2)" onerror="this.remove()">';
               html += '</a>';
             }
-            html += '</div>';
-            html += '<div style="min-width:0"><div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">';
+            html += '</div></div>';
+            // Detect result — full width below photos
+            html += '<div><div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.35rem">';
             if (res) {
               html += statusDot(res.status);
               if (res.image_grade) html += gradeBadgeHtml(res.image_grade);
@@ -196,7 +194,7 @@ export async function renderDevices(): Promise<string> {
             }
             html += '</div>';
             if (res && res.detect_result) {
-              html += '<div style="font-size:0.72rem;line-height:1.55;color:var(--text);white-space:pre-wrap;max-height:180px;overflow-y:auto">' + escHtml(res.detect_result) + '</div>';
+              html += '<div style="font-size:0.72rem;line-height:1.55;color:var(--text);white-space:pre-wrap">' + escHtml(res.detect_result) + '</div>';
             } else if (!res || res.status === 'processing') {
               html += '<div style="font-size:0.72rem;color:var(--muted);font-style:italic">Detection in progress…</div>';
             }
