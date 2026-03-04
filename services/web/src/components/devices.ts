@@ -41,13 +41,13 @@ export async function renderDevices(): Promise<string> {
     const imageCount = (a.front_count || 0) + (a.back_count || 0) + (a.frame_count || 0);
 
     return `
-    <tr style="cursor:pointer" onclick="openDeviceModal('${a.id}')">
-      <td><code style="font-size:0.78rem;color:var(--muted)">${a.id.slice(0, 8)}</code></td>
+    <tr style="cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:rgba(255,255,255,0.05)" onclick="openDeviceModal('${a.id}')">
+      <td class="col-id"><code style="font-size:0.78rem;color:var(--muted)">${a.id.slice(0, 8)}</code></td>
       <td>${device.replace(/</g, "&lt;").slice(0, 35)}</td>
-      <td style="color:var(--muted)">${(a.imei || "—").replace(/</g, "&lt;")}</td>
+      <td class="col-imei" style="color:var(--muted)">${(a.imei || "—").replace(/</g, "&lt;")}</td>
       <td>${statusBadge(a.status)}</td>
       <td>${gradeBadge(a.overall_grade)}</td>
-      <td style="color:var(--muted);text-align:center">${imageCount}</td>
+      <td class="col-photos" style="color:var(--muted);text-align:center">${imageCount}</td>
       <td style="color:var(--muted);white-space:nowrap">${date}</td>
       <td onclick="event.stopPropagation()">
         <form method="POST" action="/api/devices/${a.id}/delete" style="display:inline"
@@ -71,12 +71,12 @@ export async function renderDevices(): Promise<string> {
     <table>
       <thead>
         <tr>
-          <th>ID</th>
+          <th class="col-id">ID</th>
           <th>Device</th>
-          <th>IMEI</th>
+          <th class="col-imei">IMEI</th>
           <th>Status</th>
           <th>Grade</th>
-          <th style="text-align:center">Photos</th>
+          <th class="col-photos" style="text-align:center">Photos</th>
           <th>Date</th>
           <th></th>
         </tr>
@@ -176,7 +176,7 @@ export async function renderDevices(): Promise<string> {
           const idx = i + 1;
           const annotatedPath = data.id ? 'devices/' + data.id + '/annotated_' + side + '_' + idx + '.jpg' : null;
 
-          html += '<div style="display:grid;grid-template-columns:140px 140px 1fr;gap:1rem;align-items:start;margin-bottom:1.25rem;padding:0.75rem;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid var(--border2)">';
+          html += '<div class="dm-img-row" style="display:grid;grid-template-columns:140px 140px 1fr;gap:1rem;align-items:start;margin-bottom:1.25rem;padding:0.75rem;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid var(--border2)">';
 
           // Original photo
           html += '<div>';
@@ -196,7 +196,7 @@ export async function renderDevices(): Promise<string> {
           html += '</div>';
 
           // Detect result
-          html += '<div style="min-width:0">';
+          html += '<div class="dm-detect" style="min-width:0">';
           html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">';
           if (r) {
             html += statusDot(r.status);
@@ -278,5 +278,11 @@ export async function renderDevices(): Promise<string> {
 
   <style>
     @keyframes blink { 50% { opacity: 0; } }
+    @media (max-width: 600px) {
+      .col-id, .col-imei, .col-photos { display: none; }
+      #device-modal > div { padding: 1rem 0.75rem 2rem; }
+      .dm-img-row { grid-template-columns: 1fr 1fr !important; }
+      .dm-img-row .dm-detect { display: none !important; }
+    }
   </style>`;
 }
