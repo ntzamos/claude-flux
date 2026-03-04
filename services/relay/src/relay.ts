@@ -389,7 +389,8 @@ bot.use(async (ctx, next) => {
 function cleanErrorDetail(detail: string): string {
   // Strip raw HTML (e.g. Cloudflare challenge pages for 403 errors)
   if (/<html|<!DOCTYPE/i.test(detail)) {
-    const m = detail.match(/(\d{3})/);
+    // Only match real HTTP status codes (4xx/5xx) — avoid matching arbitrary 3-digit numbers
+    const m = detail.match(/\b([45]\d{2})\b/);
     const code = m ? m[1] : "";
     if (code === "403") return "Authentication failed (HTTP 403). The Anthropic API request was blocked.";
     if (code === "429") return "Rate limited (HTTP 429). Too many requests — please wait a moment.";
