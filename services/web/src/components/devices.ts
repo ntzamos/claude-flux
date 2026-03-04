@@ -50,7 +50,7 @@ export async function renderDevices(): Promise<string> {
       <td class="col-photos" style="color:var(--muted);text-align:center">${imageCount}</td>
       <td style="color:var(--muted);white-space:nowrap">${date}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-sm" onclick="openDeviceModal('${a.id}')" style="touch-action:manipulation;margin-right:0.4rem">View</button>
+        <button class="btn btn-sm" data-open-device="${a.id}" style="touch-action:manipulation;margin-right:0.4rem">View</button>
         <form method="POST" action="/api/devices/${a.id}/delete" style="display:inline"
               onsubmit="return confirm('Delete this assessment and all its images?')">
           <button class="btn btn-sm" style="background:rgba(255,82,82,0.12);color:#ff7070;border:1px solid rgba(255,82,82,0.25);touch-action:manipulation">Delete</button>
@@ -238,7 +238,7 @@ export async function renderDevices(): Promise<string> {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
-    async function openDeviceModal(id) {
+    window.openDeviceModal = async function openDeviceModal(id) {
       document.getElementById('device-modal').style.display = 'block';
       document.getElementById('dm-content').innerHTML = '<div style="text-align:center;padding:3rem;color:var(--muted)">Loading…</div>';
       document.getElementById('dm-id').textContent = id;
@@ -270,11 +270,17 @@ export async function renderDevices(): Promise<string> {
       }
     }
 
-    function closeDeviceModal() {
+    window.closeDeviceModal = function closeDeviceModal() {
       document.getElementById('device-modal').style.display = 'none';
     }
 
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDeviceModal(); });
+
+    // Event delegation for View buttons — more reliable than inline onclick on mobile
+    document.addEventListener('click', function(e) {
+      const btn = e.target.closest('[data-open-device]');
+      if (btn) openDeviceModal(btn.getAttribute('data-open-device'));
+    });
   </script>
 
   <style>
