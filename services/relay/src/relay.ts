@@ -381,6 +381,9 @@ if (!(await acquireLock())) {
 
 const bot = new Bot(BOT_TOKEN);
 
+// Pending rejected photos awaiting user decision (retake vs keep)
+const pendingRejectedPhotos = new Map<string, { assessmentId: string; side: ImageSide; relPath: string; reason: string }>();
+
 // ============================================================
 // SECURITY: Only respond to authorized user
 // ============================================================
@@ -725,6 +728,40 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.reply("Grading failed. Photos are saved — use /device > Continue to retry.");
       }
     });
+    return;
+  }
+
+  if (data.startsWith("device:retake:")) {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const pendingId = data.slice("device:retake:".length);
+    const pending = pendingRejectedPhotos.get(pendingId);
+    if (!pending) { await ctx.reply("That photo is no longer pending."); return; }
+    pendingRejectedPhotos.delete(pendingId);
+    await removeLastImage(pending.relPath);
+    const sideLabel = pending.side === "frame" ? "sides/edges" : pending.side;
+    await ctx.reply(
+      `Photo discarded. Send a new ${sideLabel} photo whenever you're ready.`,
+      { reply_markup: new InlineKeyboard().text(`Done — ${pending.side} photos collected`, `device:done_${pending.side}`) }
+    );
+    return;
+  }
+
+  if (data.startsWith("device:keep:")) {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    const pendingId = data.slice("device:keep:".length);
+    const pending = pendingRejectedPhotos.get(pendingId);
+    if (!pending) { await ctx.reply("That photo is no longer pending."); return; }
+    pendingRejectedPhotos.delete(pendingId);
+    const count = await appendImage(pending.assessmentId, pending.side, pending.relPath);
+    runEagerDetect(pending.assessmentId, pending.side, pending.relPath, count, callClaude).catch(err =>
+      console.error("[device] eager detect error (kept photo):", err)
+    );
+    await ctx.reply(
+      `Photo ${count} kept — analyzing defects in background. Send more or tap Done.`,
+      { reply_markup: new InlineKeyboard().text(`Done — ${pending.side} photos collected`, `device:done_${pending.side}`) }
+    );
     return;
   }
 
@@ -1626,17 +1663,23 @@ async function handleDevicePhoto(ctx: any, assessmentId: string, side: ImageSide
       new InlineKeyboard().text(label, cbData);
 
     const rejectMessages: Record<string, string> = {
-      wrong_side: `That looks like the wrong side. Please send a photo of the ${side === "frame" ? "sides/edges" : side}.`,
-      no_device:  "The device isn't visible in that photo — make sure the phone fills most of the frame and try again.",
-      blurry:     "That photo is out of focus or too dark. Hold the camera steady and try again.",
-      dirty:      "The surface has too many fingerprints or smudges — give it a quick wipe and retake the photo.",
+      wrong_side: `That looks like the wrong side — expected the ${side === "frame" ? "sides/edges" : side}. Retake or keep it at your own risk.`,
+      no_device:  "The device isn't fully visible — make sure the phone fills most of the frame. Retake or keep it at your own risk.",
+      blurry:     "That photo is out of focus or too dark. Retake or keep it at your own risk.",
+      dirty:      "The surface has too many fingerprints or smudges. Retake or keep it at your own risk.",
     };
 
     if (validation in rejectMessages) {
-      await removeLastImage(relPath);
+      // Store pending so callbacks can act on it
+      const pendingId = Math.random().toString(36).slice(2, 8);
+      pendingRejectedPhotos.set(pendingId, { assessmentId, side, relPath, reason: validation });
       await ctx.reply(
         rejectMessages[validation],
-        { reply_markup: doneButton(`Done — ${side} photos collected`, `device:done_${side}`) }
+        {
+          reply_markup: new InlineKeyboard()
+            .text("Retake Photo", `device:retake:${pendingId}`)
+            .text("Keep Anyway", `device:keep:${pendingId}`)
+        }
       );
       return;
     }
