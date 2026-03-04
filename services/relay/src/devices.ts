@@ -46,6 +46,19 @@ export interface AssessmentState {
   updated_at: Date;
 }
 
+export interface ImageResult {
+  id: number;
+  assessment_id: string;
+  side: ImageSide;
+  image_path: string;
+  clahe_path: string | null;
+  annotated_path: string | null;
+  detect_result: string | null;
+  image_grade: string | null;
+  status: "pending" | "processing" | "complete" | "error";
+  created_at: Date;
+}
+
 // ============================================================
 // STATE MACHINE
 // ============================================================
@@ -207,6 +220,18 @@ export async function validateImageSide(
 }
 
 // ============================================================
+// IMAGE RESULTS (per-photo detect records)
+// ============================================================
+
+export async function getImageResults(assessmentId: string): Promise<ImageResult[]> {
+  return (await sql`
+    SELECT * FROM device_image_results
+    WHERE assessment_id = ${assessmentId}
+    ORDER BY side, id
+  `) as ImageResult[];
+}
+
+// ============================================================
 // GRADING RULEBOOK
 // ============================================================
 
@@ -225,42 +250,102 @@ export async function getGradingRulebook(): Promise<string> {
 }
 
 // ============================================================
-// GRADING (full /detect on all images in parallel)
+// EAGER DETECT — fire immediately after photo accepted
+// ============================================================
+
+function extractGrade(text: string): string | null {
+  const m =
+    text.match(/\bgrade[:\s*]+([ABCD])\b/i) ||
+    text.match(/\b([ABCD])\s*[=—]\s*(like new|light|heavy|crack)/i) ||
+    text.match(/\boverall[:\s]+([ABCD])\b/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+export async function runEagerDetect(
+  assessmentId: string,
+  side: ImageSide,
+  imagePath: string,
+  idx: number,
+  callClaudeFn: (prompt: string, opts?: { resume?: boolean }) => Promise<string>
+): Promise<void> {
+  const annotatedPath = `/files/devices/${assessmentId}/annotated_${side}_${idx}.jpg`;
+  const clahePath = `/files/devices/${assessmentId}/clahe_${side}_${idx}.jpg`;
+
+  // Reserve a row immediately so the dashboard can show "analyzing…"
+  const [row] = await sql`
+    INSERT INTO device_image_results
+      (assessment_id, side, image_path, clahe_path, annotated_path, status)
+    VALUES (${assessmentId}, ${side}, ${imagePath}, ${clahePath}, ${annotatedPath}, 'processing')
+    ON CONFLICT (assessment_id, image_path) DO UPDATE SET status = 'processing'
+    RETURNING id
+  `;
+  const resultId = row.id as number;
+
+  const rulebook = await getGradingRulebook();
+  const detectPrompt = buildDetectPrompt(imagePath, annotatedPath, clahePath, rulebook);
+
+  try {
+    const result = await callClaudeFn(detectPrompt, { resume: false });
+    await sql`
+      UPDATE device_image_results
+      SET detect_result = ${result}, image_grade = ${extractGrade(result)}, status = 'complete'
+      WHERE id = ${resultId}
+    `;
+  } catch (err: any) {
+    await sql`
+      UPDATE device_image_results
+      SET detect_result = ${"Error: " + (err?.message ?? "unknown")}, status = 'error'
+      WHERE id = ${resultId}
+    `;
+  }
+}
+
+// ============================================================
+// GRADING (synthesise pre-computed per-image results)
 // ============================================================
 
 export async function runFullGrading(
   assessment: DeviceAssessment,
   callClaudeFn: (prompt: string, opts?: { resume?: boolean }) => Promise<string>,
-  botToken: string
+  _botToken?: string
 ): Promise<string> {
-  const allImages: Array<{ path: string; side: string; idx: number }> = [
-    ...assessment.front_images.map((p, i) => ({ path: p, side: "front", idx: i + 1 })),
-    ...assessment.back_images.map((p, i) => ({ path: p, side: "back", idx: i + 1 })),
-    ...assessment.frame_images.map((p, i) => ({ path: p, side: "frame", idx: i + 1 })),
+  const allImages: Array<{ path: string; side: ImageSide; idx: number }> = [
+    ...assessment.front_images.map((p, i) => ({ path: p, side: "front" as ImageSide, idx: i + 1 })),
+    ...assessment.back_images.map((p, i) => ({ path: p, side: "back" as ImageSide, idx: i + 1 })),
+    ...assessment.frame_images.map((p, i) => ({ path: p, side: "frame" as ImageSide, idx: i + 1 })),
   ];
 
   if (allImages.length === 0) {
     return "No images found to grade.";
   }
 
+  // Use pre-computed results where available; run detect for any gaps
+  const precomputed = await getImageResults(assessment.id);
+  const preMap = new Map(precomputed.map(r => [r.image_path, r]));
   const rulebook = await getGradingRulebook();
 
-  // Run /detect on each image in parallel with unique annotated output paths
   const detectResults = await Promise.all(
     allImages.map(async ({ path, side, idx }) => {
+      const pre = preMap.get(path);
+      if (pre && pre.status === "complete" && pre.detect_result) {
+        return { side, idx, result: pre.detect_result };
+      }
+      // Not yet pre-computed — run now and save
       const annotatedPath = `/files/devices/${assessment.id}/annotated_${side}_${idx}.jpg`;
       const clahePath = `/files/devices/${assessment.id}/clahe_${side}_${idx}.jpg`;
       const detectPrompt = buildDetectPrompt(path, annotatedPath, clahePath, rulebook);
       try {
         const result = await callClaudeFn(detectPrompt, { resume: false });
-        // Send annotated image to Telegram if it was created
-        try {
-          const { exists } = await import("fs");
-          if (exists(annotatedPath)) {
-            const proc = spawn(["bash", "/home/relay/app/actions/send_file_to_telegram.sh", annotatedPath]);
-            await proc.exited;
-          }
-        } catch {}
+        const grade = extractGrade(result);
+        await sql`
+          INSERT INTO device_image_results
+            (assessment_id, side, image_path, clahe_path, annotated_path, detect_result, image_grade, status)
+          VALUES (${assessment.id}, ${side}, ${path}, ${clahePath}, ${annotatedPath}, ${result}, ${grade}, 'complete')
+          ON CONFLICT (assessment_id, image_path) DO UPDATE
+            SET detect_result = EXCLUDED.detect_result, image_grade = EXCLUDED.image_grade,
+                clahe_path = EXCLUDED.clahe_path, annotated_path = EXCLUDED.annotated_path,
+                status = 'complete'
+        `;
         return { side, idx, result };
       } catch (err: any) {
         return { side, idx, result: `Error analyzing ${side} image ${idx}: ${err?.message}` };

@@ -1091,6 +1091,23 @@ const server = Bun.serve({
       }
     }
 
+    // GET /api/devices/:id — full detail including per-image results
+    const deviceDetailMatch = pathname.match(/^\/api\/devices\/([^/]+)$/);
+    if (deviceDetailMatch && req.method === "GET") {
+      const id = deviceDetailMatch[1];
+      if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: "Invalid ID" }, 400);
+      try {
+        const [assessment] = await sql`SELECT * FROM device_assessments WHERE id = ${id}`;
+        if (!assessment) return json({ error: "Not found" }, 404);
+        const imageResults = await sql`
+          SELECT * FROM device_image_results WHERE assessment_id = ${id} ORDER BY side, id
+        `;
+        return json({ ...assessment, image_results: imageResults });
+      } catch (err: any) {
+        return json({ error: err.message }, 500);
+      }
+    }
+
     const deviceDeleteMatch = pathname.match(/^\/api\/devices\/([^/]+)\/delete$/);
     if (deviceDeleteMatch && req.method === "POST") {
       const id = deviceDeleteMatch[1];

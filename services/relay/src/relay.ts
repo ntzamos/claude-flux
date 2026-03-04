@@ -31,6 +31,7 @@ import {
   appendImage,
   removeLastImage,
   validateImageSide,
+  runEagerDetect,
   runFullGrading,
   listAssessments,
   getGradingRulebook,
@@ -1642,14 +1643,19 @@ async function handleDevicePhoto(ctx: any, assessmentId: string, side: ImageSide
 
     const count = await appendImage(assessmentId, side, relPath);
 
+    // Fire eager defect detection in background — results stored in device_image_results
+    runEagerDetect(assessmentId, side, relPath, count, callClaude).catch(err =>
+      console.error("[device] eager detect error:", err)
+    );
+
     if (validation === "unclear") {
       await ctx.reply(
-        `Photo ${count} saved (couldn't fully verify — send a clearer one if needed). Tap Done when ready.`,
+        `Photo ${count} saved (couldn't fully verify — send a clearer one if needed). Analyzing defects in background. Tap Done when ready.`,
         { reply_markup: doneButton(`Done — ${side} photos collected`, `device:done_${side}`) }
       );
     } else {
       await ctx.reply(
-        `${side.charAt(0).toUpperCase() + side.slice(1)} photo ${count} saved. Send more or tap Done.`,
+        `${side.charAt(0).toUpperCase() + side.slice(1)} photo ${count} saved — analyzing defects in background. Send more or tap Done.`,
         { reply_markup: doneButton(`Done — ${side} photos collected`, `device:done_${side}`) }
       );
     }
