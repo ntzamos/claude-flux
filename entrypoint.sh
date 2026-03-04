@@ -8,7 +8,10 @@ if [ ! -w /files ]; then
 fi
 
 echo "[init] Waiting for database..."
-until pg_isready -h db -p 5432 -U postgres >/dev/null 2>&1; do
+DB_HOST=$(echo "$DATABASE_URL" | sed -E 's|.*@([^:/]+)(:[0-9]+)?/.*|\1|')
+DB_PORT=$(echo "$DATABASE_URL" | sed -E 's|.*:([0-9]+)/.*|\1|')
+DB_PORT=${DB_PORT:-5432}
+until pg_isready -h "$DB_HOST" -p "$DB_PORT" >/dev/null 2>&1; do
   sleep 2
 done
 echo "[init] Database is ready."
