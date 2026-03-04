@@ -69,8 +69,10 @@ RUN chmod +x entrypoint.sh \
 RUN mkdir -p /home/relay/.claude-relay \
     && mkdir -p /home/relay/.claude/debug /home/relay/.claude/todos /home/relay/.claude/backups \
     && mkdir -p /files \
+    && mkdir -p /whisper-models \
     && chown -R relay:relay /home/relay \
     && chown relay:relay /files \
+    && chown relay:relay /whisper-models \
     && echo "relay ALL=(root) NOPASSWD: /bin/chown relay\\:relay /files" >> /etc/sudoers
 
 USER relay
