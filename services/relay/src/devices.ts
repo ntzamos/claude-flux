@@ -199,6 +199,24 @@ export async function validateImageSide(
 }
 
 // ============================================================
+// GRADING RULEBOOK
+// ============================================================
+
+export async function getGradingRulebook(): Promise<string> {
+  try {
+    const rows = await sql`
+      SELECT category, rule FROM grading_rulebook
+      WHERE active = true
+      ORDER BY category, id
+    `;
+    if (rows.length === 0) return "";
+    return rows.map((r: any) => `- [${r.category}] ${r.rule}`).join("\n");
+  } catch {
+    return "";
+  }
+}
+
+// ============================================================
 // GRADING (full /detect on all images in parallel)
 // ============================================================
 
@@ -217,11 +235,14 @@ export async function runFullGrading(
     return "No images found to grade.";
   }
 
+  const rulebook = await getGradingRulebook();
+
   // Run /detect on each image in parallel with unique annotated output paths
   const detectResults = await Promise.all(
     allImages.map(async ({ path, side, idx }) => {
       const annotatedPath = `/files/devices/${assessment.id}/annotated_${side}_${idx}.jpg`;
-      const detectPrompt = buildDetectPrompt(path, annotatedPath);
+      const clahePath = `/files/devices/${assessment.id}/clahe_${side}_${idx}.jpg`;
+      const detectPrompt = buildDetectPrompt(path, annotatedPath, clahePath, rulebook);
       try {
         const result = await callClaudeFn(detectPrompt, { resume: false });
         // Send annotated image to Telegram if it was created
@@ -245,9 +266,14 @@ export async function runFullGrading(
     ? `Device: ${(assessment.device_info as any).description}` + (assessment.imei ? ` | IMEI: ${assessment.imei}` : "")
     : assessment.imei ? `IMEI: ${assessment.imei}` : "Unknown device";
 
+  const rulebookSection = rulebook
+    ? `\n\nGRADING RULEBOOK (apply these when determining the overall grade):\n${rulebook}`
+    : "";
+
   const synthesisPrompt =
     `You are grading a smartphone for resale. Here are the defect analysis results for each photo:\n\n` +
     summaryParts.join("\n\n---\n\n") +
+    rulebookSection +
     `\n\nBased on all of the above, provide a final grading summary in plain text (no markdown):\n` +
     `1. Overall grade: A, B, C, or D (A=like new, B=light scratches, C=heavy scratches/multiple defects, D=cracked screen or lens)\n` +
     `2. One sentence per side (front/back/frame) summarizing condition\n` +
@@ -291,35 +317,54 @@ export async function runFullGrading(
 // INTERNAL HELPERS
 // ============================================================
 
-function buildDetectPrompt(imagePath: string, annotatedOutputPath: string): string {
+function buildDetectPrompt(
+  imagePath: string,
+  annotatedOutputPath: string,
+  clahePath: string,
+  rulebook: string
+): string {
   const imgPath = `/files/${imagePath}`;
+  const rulebookSection = rulebook
+    ? `\n\nGRADING RULEBOOK — apply these rules when classifying defects:\n${rulebook}`
+    : "";
   return (
     "DEFECT DETECTION TASK:" +
-    `\nImage: ${imgPath}` +
+    `\nOriginal image: ${imgPath}` +
+    rulebookSection +
     "\n" +
-    "\nSTEP 1 — VISUAL INSPECTION (do this first, in your head):" +
+    "\nSTEP 0 — ENHANCE IMAGE FOR INSPECTION:" +
+    `\nRun: bun /home/relay/app/actions/clahe.ts ${imgPath} ${clahePath}` +
+    `\nThen open ${clahePath} with the Read tool. Use this contrast-enhanced version for your inspection in Step 1.` +
+    "\nIf the CLAHE step fails, fall back to the original image." +
+    "\n" +
+    "\nSTEP 1 — VISUAL INSPECTION (use the CLAHE-enhanced image):" +
     "\n- Analyze only what is visible in this photo. Do not speculate about sides not shown." +
     "\n- Inspect systematically: screen, back panel, each individual camera lens, camera module glass, frame, corners." +
-    "\n- For each camera lens: explicitly decide — intact, scratched, or cracked. Cracks are asymmetric and branch; scratches are linear. When in doubt, assume crack." +
-    "\n- A cracked lens = Grade D regardless of anything else." +
-    "\n- List every defect with its pixel location (approximate x,y,w,h) before moving on." +
+    "\n- CRACK vs SCRATCH distinction (critical):" +
+    "\n    Scratches: straight or gently curved, uniform direction, reflect light evenly along their length." +
+    "\n    Cracks: branch, change direction, or radiate from a point; one side may catch light differently than the other." +
+    "\n    If a mark branches at any point → it is a crack." +
+    "\n    A starburst or spider-web pattern → always a crack." +
+    "\n    Circular wear around a lens rim → scratch. Radial lines from a point on lens glass → crack." +
+    "\n- A cracked lens glass = Grade D regardless of anything else." +
+    "\n- List every defect with pixel location (approximate x,y,w,h) before moving on." +
     "\n" +
     "\nSTEP 2 — ANNOTATE WITH SELF-VERIFICATION (mandatory — iterate until accurate):" +
-    "\nRun the pre-built annotation script:" +
-    `\n  bun /home/relay/app/actions/annotate.ts <imagePath> ${annotatedOutputPath} '<defectsJSON>'` +
+    "\nRun the pre-built annotation script using the ORIGINAL image (not the CLAHE version):" +
+    `\n  bun /home/relay/app/actions/annotate.ts ${imgPath} ${annotatedOutputPath} '<defectsJSON>'` +
     "\nWhere <defectsJSON> is a JSON array built from your Step 1 findings, e.g.:" +
     "\n  '[{\"label\":\"scratch\",\"x\":120,\"y\":340,\"w\":90,\"h\":25},{\"label\":\"crack\",\"x\":400,\"y\":200,\"w\":60,\"h\":60}]'" +
-    `\nAfter running, use the Read tool to open ${annotatedOutputPath} and visually verify:` +
+    `\nAfter running, open ${annotatedOutputPath} with the Read tool and visually verify:` +
     "\n  - Is each red bounding box correctly placed over its defect?" +
-    "\nIf a bbox is off, adjust the x/y/w/h values and re-run. Repeat up to 4 times until accurate." +
+    "\nIf a bbox is off, adjust x/y/w/h and re-run. Repeat up to 4 times until accurate." +
     "\nOnly proceed to Step 3 once all boxes are correctly placed." +
     "\n" +
     "\nSTEP 3 — SEND THE ANNOTATED IMAGE:" +
     `\nRun: bash /home/relay/app/actions/send_file_to_telegram.sh ${annotatedOutputPath}` +
     "\n" +
     "\nSTEP 4 — TEXT REPLY:" +
-    "\nReply plain text only: list each defect with location, then Grade A/B/C/D + one sentence reason." +
-    "\nGrading: A=like new, B=one or more light scratches, C=heavy/deep or multiple scratches, D=at least one crack." +
+    "\nReply plain text only: list each defect with location and type (scratch vs crack), then Grade A/B/C/D + one sentence reason." +
+    "\nGrading: A=like new, B=one or more light scratches, C=heavy/deep or multiple scratches, D=at least one crack (screen or lens)." +
     `\n\nUser: [Image: ${imgPath}]\n\nRun the defect detection task above.`
   );
 }
