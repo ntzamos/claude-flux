@@ -571,6 +571,53 @@ const server = Bun.serve({
       }
     }
 
+    // ── Grading Rulebook ──────────────────────────────────────
+
+    if (pathname === "/api/rulebook" && req.method === "POST") {
+      const form = await req.formData();
+      const category = (form.get("category") as string)?.trim() || "grading";
+      const rule     = (form.get("rule")     as string)?.trim();
+      if (!rule) {
+        return redirect(`/dashboard?tab=rulebook&toast=error&msg=${encodeURIComponent("Rule text is required.")}`);
+      }
+      try {
+        await sql`INSERT INTO grading_rulebook (category, rule) VALUES (${category}, ${rule})`;
+        return redirect(`/dashboard?tab=rulebook&toast=success&msg=${encodeURIComponent("Rule added.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=rulebook&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    const ruleEditMatch = pathname.match(/^\/api\/rulebook\/([^/]+)\/edit$/);
+    if (ruleEditMatch && req.method === "POST") {
+      const id = ruleEditMatch[1];
+      const form = await req.formData();
+      const category = (form.get("category") as string)?.trim() || "grading";
+      const rule     = (form.get("rule")     as string)?.trim();
+      const active   = form.get("active") === "true";
+      try {
+        await sql`
+          UPDATE grading_rulebook
+          SET category = ${category}, rule = ${rule}, active = ${active}, updated_at = NOW()
+          WHERE id = ${id}
+        `;
+        return redirect(`/dashboard?tab=rulebook&toast=success&msg=${encodeURIComponent("Rule updated.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=rulebook&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
+    const ruleDeleteMatch = pathname.match(/^\/api\/rulebook\/([^/]+)\/delete$/);
+    if (ruleDeleteMatch && req.method === "POST") {
+      const id = ruleDeleteMatch[1];
+      try {
+        await sql`DELETE FROM grading_rulebook WHERE id = ${id}`;
+        return redirect(`/dashboard?tab=rulebook&toast=success&msg=${encodeURIComponent("Rule deleted.")}`);
+      } catch (err: any) {
+        return redirect(`/dashboard?tab=rulebook&toast=error&msg=${encodeURIComponent(err.message)}`);
+      }
+    }
+
     // ── Files ─────────────────────────────────────────────────
 
     // Serve a generated file (supports subdirectories)

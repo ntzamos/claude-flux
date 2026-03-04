@@ -74,6 +74,7 @@ export function layout(title: string, content: string, activeTab?: string, theme
     { id: "memory",   label: "Memory",   icon: "◈" },
     { id: "lists",    label: "Lists",    icon: "☑" },
     { id: "devices",  label: "Devices",  icon: "◫" },
+    { id: "rulebook", label: "Rulebook", icon: "◧" },
     { id: "files",    label: "Files",    icon: "⌺" },
     { id: "mcp",      label: "MCP",      icon: "⬡" },
     { id: "commands", label: "Commands", icon: "⌘" },

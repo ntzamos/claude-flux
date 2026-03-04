@@ -8,6 +8,7 @@ import { renderCommands } from "../components/commands.ts";
 import { renderMcp } from "../components/mcp.ts";
 import { renderLists } from "../components/lists.ts";
 import { renderDevices } from "../components/devices.ts";
+import { renderRulebook } from "../components/rulebook.ts";
 import { readdir } from "fs/promises";
 import { sql, getSettings } from "../db.ts";
 
@@ -144,6 +145,9 @@ export async function renderDashboard(
       break;
     case "devices":
       tabContent = await renderDevices();
+      break;
+    case "rulebook":
+      tabContent = await renderRulebook();
       break;
     case "files":
       tabContent = await renderFiles(filePath ?? "");
