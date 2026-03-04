@@ -1445,15 +1445,14 @@ function buildPrompt(
       "\n- List every defect with its pixel location (approximate x,y,w,h) before moving on." +
       "\n" +
       "\nSTEP 2 — ANNOTATE WITH SELF-VERIFICATION (mandatory — iterate until accurate):" +
-      "\nYou must write and run a Bun script at /tmp/annotate.ts using canvas from /home/relay/app/services/relay/node_modules/canvas/index.js." +
-      "\nThe script must:" +
-      "\n  a) Load the image from the path above" +
-      "\n  b) For each defect found, draw a red rectangle (lineWidth=4) and a red label above it (font: bold 28px sans-serif, white text on red background)" +
-      "\n  c) Save the result as JPEG to /files/defect-annotated.jpg" +
-      "\nAfter running the script, you MUST use the Read tool to open /files/defect-annotated.jpg and visually verify:" +
-      "\n  - Is the red bounding box correctly placed over the defect?" +
-      "\nIf the bbox is off or misses the defect, adjust the x/y/w/h coordinates and re-run. Repeat up to 3 times until the annotation is visually accurate." +
-      "\nOnly proceed to Step 3 once you are confident the bbox is correctly placed." +
+      "\nRun the pre-built annotation script:" +
+      "\n  bun /home/relay/app/actions/annotate.ts <imagePath> /files/defect-annotated.jpg '<defectsJSON>'" +
+      "\nWhere <defectsJSON> is a JSON array built from your Step 1 findings, e.g.:" +
+      "\n  '[{\"label\":\"scratch\",\"x\":120,\"y\":340,\"w\":90,\"h\":25},{\"label\":\"crack\",\"x\":400,\"y\":200,\"w\":60,\"h\":60}]'" +
+      "\nAfter running, use the Read tool to open /files/defect-annotated.jpg and visually verify:" +
+      "\n  - Is each red bounding box correctly placed over its defect?" +
+      "\nIf a bbox is off, adjust the x/y/w/h values and re-run. Repeat up to 4 times until accurate." +
+      "\nOnly proceed to Step 3 once all boxes are correctly placed." +
       "\n" +
       "\nSTEP 3 — SEND THE ANNOTATED IMAGE:" +
       "\nRun: bash /home/relay/app/actions/send_file_to_telegram.sh /files/defect-annotated.jpg" +
