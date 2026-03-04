@@ -906,14 +906,14 @@ bot.on("callback_query:data", async (ctx) => {
     await ctx.answerCallbackQuery();
     const status = await checkStartupStatus();
     const lines = ["🤖 Bot Info", "", `Claude: ${CLAUDE_PATH}`, `Project dir: ${PROJECT_DIR || "(relay dir)"}`, `Relay dir: ${RELAY_DIR}`, "", status];
-    await ctx.reply(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Info", "menu:info").text("🏠 Menu", "menu:main") });
+    await ctx.editMessageText(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Info", "menu:info").text("🏠 Menu", "menu:main") });
     return;
   }
   if (data === "menu:userinfo") {
     await ctx.answerCallbackQuery();
     const lines = ["👤 User Info", "", `ID: ${ctx.from?.id}`, `Name: ${USER_NAME || ctx.from?.first_name || "not set"}`, `Timezone: ${USER_TIMEZONE}`];
     if (ctx.from?.username) lines.push(`Username: @${ctx.from.username}`);
-    await ctx.reply(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Info", "menu:info").text("🏠 Menu", "menu:main") });
+    await ctx.editMessageText(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Info", "menu:info").text("🏠 Menu", "menu:main") });
     return;
   }
   if (data === "menu:session") {
@@ -924,7 +924,7 @@ bot.on("callback_query:data", async (ctx) => {
       const last = new Date(s.lastActivity).toLocaleString("en-US", { timeZone: USER_TIMEZONE, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
       lines.push(`Last activity: ${last}`);
     }
-    await ctx.reply(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Info", "menu:info").text("🏠 Menu", "menu:main") });
+    await ctx.editMessageText(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Info", "menu:info").text("🏠 Menu", "menu:main") });
     return;
   }
   if (data === "menu:restart") {
@@ -957,7 +957,7 @@ bot.on("callback_query:data", async (ctx) => {
     try {
       const tasks = await sql`SELECT description, schedule_type, next_run_at, interval_minutes, run_count FROM scheduled_tasks WHERE status = 'active' ORDER BY next_run_at ASC`;
       if (!tasks || tasks.length === 0) {
-        await ctx.reply("No active scheduled tasks.", { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+        await ctx.editMessageText("No active scheduled tasks.", { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
         return;
       }
       const lines = [`⏰ ${tasks.length} active task(s):`, ""];
@@ -967,7 +967,7 @@ bot.on("callback_query:data", async (ctx) => {
         lines.push(`• ${t.description}`);
         lines.push(`  ${typeLabel} · next: ${next} · runs: ${t.run_count}`);
       }
-      await ctx.reply(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+      await ctx.editMessageText(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
     } catch (err: any) { await ctx.reply(`Error: ${err.message}`); }
     return;
   }
@@ -976,7 +976,7 @@ bot.on("callback_query:data", async (ctx) => {
     try {
       const items = await sql`SELECT type, content, priority FROM memory WHERE type != 'completed_goal' ORDER BY type, priority DESC, created_at ASC`;
       if (!items || items.length === 0) {
-        await ctx.reply("No memory items stored.", { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+        await ctx.editMessageText("No memory items stored.", { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
         return;
       }
       const grouped: Record<string, string[]> = {};
@@ -990,7 +990,7 @@ bot.on("callback_query:data", async (ctx) => {
         lines.push(...entries);
         lines.push("");
       }
-      await ctx.reply(lines.join("\n").trim(), { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+      await ctx.editMessageText(lines.join("\n").trim(), { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
     } catch (err: any) { await ctx.reply(`Error: ${err.message}`); }
     return;
   }
@@ -999,7 +999,7 @@ bot.on("callback_query:data", async (ctx) => {
     try {
       const servers = await sql`SELECT name, type, command, args, url, enabled FROM mcp_servers ORDER BY name`;
       if (!servers || servers.length === 0) {
-        await ctx.reply("No MCP servers configured.", { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+        await ctx.editMessageText("No MCP servers configured.", { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
         return;
       }
       const lines = [`🔌 ${servers.length} MCP server(s):`, ""];
@@ -1009,7 +1009,7 @@ bot.on("callback_query:data", async (ctx) => {
         lines.push(`${status} ${s.name} (${s.type})`);
         lines.push(`  ${detail}`);
       }
-      await ctx.reply(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
+      await ctx.editMessageText(lines.join("\n"), { reply_markup: new InlineKeyboard().text("⬅️ Content", "menu:content").text("🏠 Menu", "menu:main") });
     } catch (err: any) { await ctx.reply(`Error: ${err.message}`); }
     return;
   }
