@@ -2,9 +2,6 @@
 -- Migration 0001
 -- Conversation history, memory (facts/goals), logs, semantic search functions
 
--- Required extensions
-CREATE EXTENSION IF NOT EXISTS vector;
-
 -- ============================================================
 -- MESSAGES TABLE (Conversation History)
 -- ============================================================
@@ -14,8 +11,7 @@ CREATE TABLE IF NOT EXISTS messages (
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
   content TEXT NOT NULL,
   channel TEXT DEFAULT 'telegram',
-  metadata JSONB DEFAULT '{}',
-  embedding VECTOR(1536)
+  metadata JSONB DEFAULT '{}'
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at DESC);
@@ -33,8 +29,7 @@ CREATE TABLE IF NOT EXISTS memory (
   deadline TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
   priority INTEGER DEFAULT 0,
-  metadata JSONB DEFAULT '{}',
-  embedding VECTOR(1536)
+  metadata JSONB DEFAULT '{}'
 );
 
 CREATE INDEX IF NOT EXISTS idx_memory_type ON memory(type);
@@ -106,43 +101,60 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- SEMANTIC SEARCH
+-- VECTOR COLUMNS + SEMANTIC SEARCH (only if pgvector is installed)
 -- ============================================================
-
-CREATE OR REPLACE FUNCTION match_messages(
-  query_embedding VECTOR(1536),
-  match_threshold FLOAT DEFAULT 0.7,
-  match_count INT DEFAULT 10
-)
-RETURNS TABLE (id UUID, content TEXT, role TEXT, created_at TIMESTAMPTZ, similarity FLOAT) AS $$
+DO $$
 BEGIN
-  RETURN QUERY
-  SELECT
-    m.id, m.content, m.role, m.created_at,
-    1 - (m.embedding <=> query_embedding) AS similarity
-  FROM messages m
-  WHERE m.embedding IS NOT NULL
-    AND 1 - (m.embedding <=> query_embedding) > match_threshold
-  ORDER BY m.embedding <=> query_embedding
-  LIMIT match_count;
-END;
-$$ LANGUAGE plpgsql;
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    -- Add embedding columns
+    BEGIN
+      ALTER TABLE messages ADD COLUMN embedding vector(1536);
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END;
+    BEGIN
+      ALTER TABLE memory ADD COLUMN embedding vector(1536);
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END;
 
-CREATE OR REPLACE FUNCTION match_memory(
-  query_embedding VECTOR(1536),
-  match_threshold FLOAT DEFAULT 0.7,
-  match_count INT DEFAULT 10
-)
-RETURNS TABLE (id UUID, content TEXT, type TEXT, created_at TIMESTAMPTZ, similarity FLOAT) AS $$
-BEGIN
-  RETURN QUERY
-  SELECT
-    m.id, m.content, m.type, m.created_at,
-    1 - (m.embedding <=> query_embedding) AS similarity
-  FROM memory m
-  WHERE m.embedding IS NOT NULL
-    AND 1 - (m.embedding <=> query_embedding) > match_threshold
-  ORDER BY m.embedding <=> query_embedding
-  LIMIT match_count;
-END;
-$$ LANGUAGE plpgsql;
+    -- Semantic search functions
+    EXECUTE $f$
+      CREATE OR REPLACE FUNCTION match_messages(
+        query_embedding vector(1536),
+        match_threshold FLOAT DEFAULT 0.7,
+        match_count INT DEFAULT 10
+      )
+      RETURNS TABLE (id UUID, content TEXT, role TEXT, created_at TIMESTAMPTZ, similarity FLOAT) AS $fn$
+      BEGIN
+        RETURN QUERY
+        SELECT m.id, m.content, m.role, m.created_at,
+               1 - (m.embedding <=> query_embedding) AS similarity
+        FROM messages m
+        WHERE m.embedding IS NOT NULL
+          AND 1 - (m.embedding <=> query_embedding) > match_threshold
+        ORDER BY m.embedding <=> query_embedding
+        LIMIT match_count;
+      END;
+      $fn$ LANGUAGE plpgsql
+    $f$;
+
+    EXECUTE $f$
+      CREATE OR REPLACE FUNCTION match_memory(
+        query_embedding vector(1536),
+        match_threshold FLOAT DEFAULT 0.7,
+        match_count INT DEFAULT 10
+      )
+      RETURNS TABLE (id UUID, content TEXT, type TEXT, created_at TIMESTAMPTZ, similarity FLOAT) AS $fn$
+      BEGIN
+        RETURN QUERY
+        SELECT m.id, m.content, m.type, m.created_at,
+               1 - (m.embedding <=> query_embedding) AS similarity
+        FROM memory m
+        WHERE m.embedding IS NOT NULL
+          AND 1 - (m.embedding <=> query_embedding) > match_threshold
+        ORDER BY m.embedding <=> query_embedding
+        LIMIT match_count;
+      END;
+      $fn$ LANGUAGE plpgsql
+    $f$;
+  END IF;
+END $$;

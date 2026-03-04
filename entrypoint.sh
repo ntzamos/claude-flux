@@ -18,10 +18,17 @@ echo "[init] Database is ready."
 
 echo "[init] Applying migrations..."
 APPLIED=0
+FAILED=0
 for f in /home/relay/app/migrations/*.sql; do
-  psql "$DATABASE_URL" -f "$f" >/dev/null 2>&1 && APPLIED=$((APPLIED + 1)) || true
+  echo "[init] Running $(basename $f)..."
+  if psql "$DATABASE_URL" -f "$f" 2>&1; then
+    APPLIED=$((APPLIED + 1))
+  else
+    echo "[init] WARNING: $(basename $f) failed (may already be applied)"
+    FAILED=$((FAILED + 1))
+  fi
 done
-echo "[init] Migrations done ($APPLIED files processed)."
+echo "[init] Migrations done ($APPLIED applied, $FAILED warnings)."
 
 echo "[init] Checking whisper model..."
 WHISPER_DIR="/whisper-models"
