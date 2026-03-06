@@ -72,6 +72,31 @@ export const FIELD_GROUPS = [
       { key: "GEMINI_API_KEY", label: "Gemini API Key", type: "password", placeholder: "AIza...", required: false },
     ],
   },
+  {
+    title: "IMEI Lookup",
+    description: "Auto-identify device brand and model from IMEI when a user starts a device assessment. Uses ifreeicloud service code 0.",
+    fields: [
+      { key: "IMEI_SERVICE_URL", label: "Service URL",  type: "text",     placeholder: "https://api.ifreeicloud.co.uk/", required: false },
+      { key: "IMEI_SERVICE_KEY", label: "Service Key",  type: "password", placeholder: "your-api-key",                    required: false },
+    ],
+  },
+  {
+    title: "SMS (Twilio)",
+    description: `Send SMS messages via Twilio. Get your credentials at <a href="https://console.twilio.com" target="_blank" style="color:var(--accent)">console.twilio.com</a>. Used by the send_sms action script.`,
+    fields: [
+      { key: "TWILIO_ACCOUNT_SID", label: "Account SID",   type: "password", placeholder: "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", required: false },
+      { key: "TWILIO_AUTH_TOKEN",  label: "Auth Token",     type: "password", placeholder: "your-auth-token",                    required: false },
+      { key: "TWILIO_FROM_NUMBER", label: "From Number",    type: "text",     placeholder: "+12025551234",                       required: false },
+    ],
+  },
+  {
+    title: "Email (Resend)",
+    description: `Send emails via Resend. Get your API key at <a href="https://resend.com/api-keys" target="_blank" style="color:var(--accent)">resend.com/api-keys</a>. Used by the send_email action script.`,
+    fields: [
+      { key: "RESEND_API_KEY",    label: "API Key",      type: "password", placeholder: "re_...",               required: false },
+      { key: "RESEND_FROM_EMAIL", label: "From Email",   type: "text",     placeholder: "you@yourdomain.com",   required: false },
+    ],
+  },
 ];
 
 function renderThemeSection(current: Record<string, string>): string {
