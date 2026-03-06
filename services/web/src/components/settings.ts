@@ -354,7 +354,7 @@ export function renderSettingsForm(
   function importEnv() {
     var raw = document.getElementById('env-paste').value;
     var filled = 0, skipped = 0;
-    raw.split('\n').forEach(function(line) {
+    raw.split('\\n').forEach(function(line) {
       line = line.trim();
       if (!line || line.startsWith('#')) return;
       var eq = line.indexOf('=');
