@@ -1338,65 +1338,61 @@ async function recoverPendingMessages(): Promise<void> {
 }
 
 // ============================================================
-// MESSAGE HANDLERS
+// MESSAGE DEBOUNCE / BUFFERING
+// Accumulates messages for DEBOUNCE_MS ms of silence, then
+// processes everything as a single combined prompt.
 // ============================================================
 
-// Text messages
-bot.on("message:text", async (ctx) => {
-  const text = ctx.message.text;
+const DEBOUNCE_MS = 5000;
 
-  // Skip commands — handled above
-  if (text.startsWith("/")) return;
+type BufferedPart =
+  | { type: "text";     content: string;    originalMessageId: number }
+  | { type: "photo";    filePath: string;   caption: string;  originalMessageId: number }
+  | { type: "document"; filePath: string;   caption: string;  fileName: string; originalMessageId: number }
+  | { type: "voice";    fileBuffer: Buffer; duration: number; originalMessageId: number };
 
-  console.log(`Message: ${text.substring(0, 50)}...`);
+interface MessageBuffer {
+  timer: ReturnType<typeof setTimeout>;
+  parts: BufferedPart[];
+  ctx: Context;
+}
 
-  const originalMessageId = ctx.message.message_id;
-  const queueId = await saveToQueue(ctx.chat!.id, { type: "text", text });
+const messageBuffers = new Map<number, MessageBuffer>();
 
-  enqueue(async () => {
-    const thinkingMsg = await ctx.reply("Thinking…");
-    await ctx.replyWithChatAction("typing");
+function addToBuffer(chatId: number, ctx: Context, part: BufferedPart): void {
+  const existing = messageBuffers.get(chatId);
+  if (existing) {
+    clearTimeout(existing.timer);
+    existing.parts.push(part);
+    existing.ctx = ctx;
+    existing.timer = setTimeout(() => flushBuffer(chatId), DEBOUNCE_MS);
+  } else {
+    const timer = setTimeout(() => flushBuffer(chatId), DEBOUNCE_MS);
+    messageBuffers.set(chatId, { timer, parts: [part], ctx });
+  }
+}
 
-    // Fetch context before saving so current message isn't in its own history
-    const [relevantContext, memoryContext, recentHistory] = await Promise.all([
-      getRelevantContext(text),
-      getMemoryContext(),
-      getRecentHistory(),
-    ]);
+async function flushBuffer(chatId: number): Promise<void> {
+  const buffer = messageBuffers.get(chatId);
+  if (!buffer || buffer.parts.length === 0) return;
+  messageBuffers.delete(chatId);
 
-    await saveMessage("user", text);
+  const { parts, ctx } = buffer;
+  const lastMsgId = parts[parts.length - 1].originalMessageId;
+  const onlyVoice = parts.length === 1 && parts[0].type === "voice";
 
-    const enrichedPrompt = buildPrompt(text, relevantContext, memoryContext, recentHistory);
-    const rawResponse = await callClaude(enrichedPrompt, { resume: true });
-
-    if (rawResponse.startsWith("Error:")) {
-      await sendErrorWithRetry(ctx, rawResponse, enrichedPrompt, { resume: true }, thinkingMsg.message_id);
-    } else {
-      await saveMessage("assistant", rawResponse);
-      await handleClaudeResponse(ctx, rawResponse, { thinkingMsgId: thinkingMsg.message_id, replyToMessageId: originalMessageId });
-    }
-  }, queueId ?? undefined);
-});
-
-// Voice messages
-bot.on("message:voice", async (ctx) => {
-  const voice = ctx.message.voice;
-  console.log(`Voice message: ${voice.duration}s`);
-
-  const originalMessageId = ctx.message.message_id;
-  enqueue(async () => {
-    const thinkingMsg = await ctx.reply("Thinking…");
-    await ctx.replyWithChatAction("typing");
-
-    try {
-      const file = await ctx.getFile();
-      const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
-      const response = await fetch(url);
-      const buffer = Buffer.from(await response.arrayBuffer());
-
-      const transcription = await transcribe(buffer);
+  // Build combined prompt
+  const promptParts: string[] = [];
+  for (const part of parts) {
+    if (part.type === "text") {
+      promptParts.push(part.content);
+    } else if (part.type === "photo") {
+      promptParts.push(`[Image: ${part.filePath}]\n\n${part.caption || "Analyze this image."}`);
+    } else if (part.type === "document") {
+      promptParts.push(`[File: ${part.filePath}]\n\n${part.caption}`);
+    } else if (part.type === "voice") {
+      const transcription = await transcribe(part.fileBuffer);
       if (!transcription) {
-        await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
         await ctx.reply(
           "No whisper model found. Download one into the whisper-models/ folder:\n" +
           "curl -L -o whisper-models/ggml-base.bin \\\n" +
@@ -1404,128 +1400,115 @@ bot.on("message:voice", async (ctx) => {
         );
         return;
       }
+      promptParts.push(`[Voice message transcribed]: ${transcription}`);
+    }
+  }
+  const combinedText = promptParts.join("\n\n");
 
-      const [relevantContext, memoryContext, recentHistory] = await Promise.all([
-        getRelevantContext(transcription),
-        getMemoryContext(),
-        getRecentHistory(),
-      ]);
+  // History label
+  const historyLabel = parts.map(p => {
+    if (p.type === "text") return p.content;
+    if (p.type === "photo") return `[Image]: ${p.caption}`;
+    if (p.type === "document") return `[Document: ${p.fileName}]: ${p.caption}`;
+    if (p.type === "voice") return `[Voice ${p.duration}s]`;
+    return "";
+  }).join(" | ");
 
-      await saveMessage("user", `[Voice ${voice.duration}s]: ${transcription}`);
+  enqueue(async () => {
+    const thinkingMsg = await ctx.reply("Thinking…");
+    await ctx.replyWithChatAction("typing");
 
-      const enrichedPrompt = buildPrompt(
-        `[Voice message transcribed]: ${transcription}`,
-        relevantContext,
-        memoryContext,
-        recentHistory
-      );
-      const rawResponse = await callClaude(enrichedPrompt, { resume: true });
+    const [relevantContext, memoryContext, recentHistory] = await Promise.all([
+      getRelevantContext(combinedText),
+      getMemoryContext(),
+      getRecentHistory(),
+    ]);
 
+    await saveMessage("user", historyLabel);
+
+    const enrichedPrompt = buildPrompt(combinedText, relevantContext, memoryContext, recentHistory);
+    const rawResponse = await callClaude(enrichedPrompt, { resume: true });
+
+    if (rawResponse.startsWith("Error:")) {
+      await sendErrorWithRetry(ctx, rawResponse, enrichedPrompt, { resume: true }, thinkingMsg.message_id);
+    } else {
       await saveMessage("assistant", rawResponse);
-      await handleClaudeResponse(ctx, rawResponse, { voiceReply: true, thinkingMsgId: thinkingMsg.message_id, replyToMessageId: originalMessageId });
-    } catch (error) {
-      console.error("Voice error:", error);
-      await ctx.reply("Could not process voice message. Check logs for details.");
+      await handleClaudeResponse(ctx, rawResponse, {
+        voiceReply: onlyVoice,
+        thinkingMsgId: thinkingMsg.message_id,
+        replyToMessageId: lastMsgId,
+      });
     }
   });
+}
+
+// ============================================================
+// MESSAGE HANDLERS
+// ============================================================
+
+// Text messages
+bot.on("message:text", async (ctx) => {
+  const text = ctx.message.text;
+  if (text.startsWith("/")) return;
+  console.log(`Message: ${text.substring(0, 50)}...`);
+  addToBuffer(ctx.chat!.id, ctx, { type: "text", content: text, originalMessageId: ctx.message.message_id });
+});
+
+// Voice messages
+bot.on("message:voice", async (ctx) => {
+  const voice = ctx.message.voice;
+  console.log(`Voice message: ${voice.duration}s`);
+  try {
+    const file = await ctx.getFile();
+    const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+    const response = await fetch(url);
+    const fileBuffer = Buffer.from(await response.arrayBuffer());
+    addToBuffer(ctx.chat!.id, ctx, { type: "voice", fileBuffer, duration: voice.duration, originalMessageId: ctx.message.message_id });
+  } catch (error) {
+    console.error("Voice error:", error);
+    await ctx.reply("Could not process voice message. Check logs for details.");
+  }
 });
 
 // Photos/Images
 bot.on("message:photo", async (ctx) => {
   console.log("Image received");
-
-  const originalMessageId = ctx.message.message_id;
-  enqueue(async () => {
-    const thinkingMsg = await ctx.reply("Thinking…");
-    await ctx.replyWithChatAction("typing");
-
-    try {
-      // Get highest resolution photo
-      const photos = ctx.message.photo;
-      const photo = photos[photos.length - 1];
-      const file = await ctx.api.getFile(photo.file_id);
-
-      // Save to /files/ so it appears in the dashboard
-      const timestamp = Date.now();
-      const fileName = `photo_${timestamp}.jpg`;
-      const filePath = `/files/${fileName}`;
-
-      const response = await fetch(
-        `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`
-      );
-      const buffer = await response.arrayBuffer();
-      await writeFile(filePath, Buffer.from(buffer));
-
-      const rawCaption = ctx.message.caption || "";
-      const [memoryContext, recentHistory] = await Promise.all([
-        getMemoryContext(),
-        getRecentHistory(),
-      ]);
-
-      await saveMessage("user", `[Image]: ${rawCaption || "Analyze this image."}`);
-
-      const userMessage = `[Image: ${filePath}]\n\n${rawCaption || "Analyze this image."}`;
-
-      const claudeResponse = await callClaude(
-        buildPrompt(userMessage, undefined, memoryContext, recentHistory),
-        { resume: true }
-      );
-
-      await saveMessage("assistant", claudeResponse);
-      await handleClaudeResponse(ctx, claudeResponse, { thinkingMsgId: thinkingMsg.message_id, replyToMessageId: originalMessageId });
-      await ctx.reply(`Photo saved: ${fileName}\nView at: ${process.env.WEB_HOST || ""}/dashboard?tab=files`);
-    } catch (error) {
-      console.error("Image error:", error);
-      await ctx.reply("Could not process image.");
-    }
-  });
+  try {
+    const photos = ctx.message.photo;
+    const photo = photos[photos.length - 1];
+    const file = await ctx.api.getFile(photo.file_id);
+    const timestamp = Date.now();
+    const fileName = `photo_${timestamp}.jpg`;
+    const filePath = `/files/${fileName}`;
+    const response = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`);
+    const buffer = await response.arrayBuffer();
+    await writeFile(filePath, Buffer.from(buffer));
+    const caption = ctx.message.caption || "";
+    addToBuffer(ctx.chat!.id, ctx, { type: "photo", filePath, caption, originalMessageId: ctx.message.message_id });
+  } catch (error) {
+    console.error("Image error:", error);
+    await ctx.reply("Could not process image.");
+  }
 });
 
 // Documents
 bot.on("message:document", async (ctx) => {
   const doc = ctx.message.document;
   console.log(`Document: ${doc.file_name}`);
-
-  const originalMessageId = ctx.message.message_id;
-  enqueue(async () => {
-    const thinkingMsg = await ctx.reply("Thinking…");
-    await ctx.replyWithChatAction("typing");
-
-    try {
-      const file = await ctx.getFile();
-      const timestamp = Date.now();
-      const fileName = doc.file_name ? `${timestamp}_${doc.file_name}` : `file_${timestamp}`;
-      const filePath = `/files/${fileName}`;
-
-      const response = await fetch(
-        `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`
-      );
-      const buffer = await response.arrayBuffer();
-      await writeFile(filePath, Buffer.from(buffer));
-
-      const caption = ctx.message.caption || `Analyze: ${doc.file_name}`;
-      const prompt = `[File: ${filePath}]\n\n${caption}`;
-
-      const [memoryContext, recentHistory] = await Promise.all([
-        getMemoryContext(),
-        getRecentHistory(),
-      ]);
-
-      await saveMessage("user", `[Document: ${doc.file_name}]: ${caption}`);
-
-      const claudeResponse = await callClaude(
-        buildPrompt(prompt, undefined, memoryContext, recentHistory),
-        { resume: true }
-      );
-
-      await saveMessage("assistant", claudeResponse);
-      await handleClaudeResponse(ctx, claudeResponse, { thinkingMsgId: thinkingMsg.message_id, replyToMessageId: originalMessageId });
-      await ctx.reply(`File saved: ${fileName}\nView at: ${process.env.WEB_HOST || ""}/dashboard?tab=files`);
-    } catch (error) {
-      console.error("Document error:", error);
-      await ctx.reply("Could not process document.");
-    }
-  });
+  try {
+    const file = await ctx.getFile();
+    const timestamp = Date.now();
+    const fileName = doc.file_name ? `${timestamp}_${doc.file_name}` : `file_${timestamp}`;
+    const filePath = `/files/${fileName}`;
+    const response = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`);
+    const buffer = await response.arrayBuffer();
+    await writeFile(filePath, Buffer.from(buffer));
+    const caption = ctx.message.caption || `Analyze: ${doc.file_name}`;
+    addToBuffer(ctx.chat!.id, ctx, { type: "document", filePath, caption, fileName, originalMessageId: ctx.message.message_id });
+  } catch (error) {
+    console.error("Document error:", error);
+    await ctx.reply("Could not process document.");
+  }
 });
 
 // ============================================================
