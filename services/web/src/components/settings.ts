@@ -319,6 +319,18 @@ export function renderSettingsForm(
     </div>
   </div>
 
+  <!-- ── Import from .env ────────────────────────────────── -->
+  <div class="card" style="margin-bottom:1rem">
+    <div class="section-title">Import from .env</div>
+    <div class="section-desc">Paste the contents of a <code>.env</code> file and matching fields will be filled in automatically.</div>
+    <textarea id="env-paste" rows="5" placeholder="TELEGRAM_BOT_TOKEN=123...\nANTHROPIC_API_KEY=sk-ant-..."
+      style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:0.65rem 0.75rem;color:var(--text);font-family:monospace;font-size:0.78rem;resize:vertical;outline:none;margin-top:0.25rem"></textarea>
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.6rem">
+      <button type="button" class="btn btn-sm" onclick="importEnv()">Fill Fields</button>
+      <span id="env-status" style="font-size:0.75rem;color:var(--muted)"></span>
+    </div>
+  </div>
+
   <form method="POST" action="/api/settings">
     ${groupsHtml}
     <div class="save-bar">
@@ -339,6 +351,30 @@ export function renderSettingsForm(
   </div>
 
   <script>
+  function importEnv() {
+    var raw = document.getElementById('env-paste').value;
+    var filled = 0, skipped = 0;
+    raw.split('\n').forEach(function(line) {
+      line = line.trim();
+      if (!line || line.startsWith('#')) return;
+      var eq = line.indexOf('=');
+      if (eq < 1) return;
+      var key = line.slice(0, eq).trim();
+      var val = line.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+      var el = document.getElementById(key);
+      if (el && el.tagName === 'INPUT' && el.type !== 'checkbox') {
+        el.value = val;
+        if (el.type === 'password') el.type = 'text';
+        filled++;
+      } else {
+        skipped++;
+      }
+    });
+    var s = document.getElementById('env-status');
+    s.textContent = filled + ' field' + (filled !== 1 ? 's' : '') + ' filled' + (skipped ? ', ' + skipped + ' unknown keys skipped' : '') + '.';
+    s.style.color = filled > 0 ? 'var(--accent)' : 'var(--muted)';
+  }
+
   function openDangerModal(action, label, desc) {
     document.getElementById('danger-title').textContent = label;
     document.getElementById('danger-desc').textContent = desc;
