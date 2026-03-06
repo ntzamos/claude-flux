@@ -63,7 +63,7 @@ COPY . .
 
 # ── Helpers ───────────────────────────────────────────────
 RUN chmod +x entrypoint.sh \
-    && chmod +x actions/send_file_to_telegram.sh \
+    && chmod +x actions/send_file_to_telegram.sh
 
 # ── Directory setup + permissions ─────────────────────────
 RUN mkdir -p /home/relay/.claude-relay \
