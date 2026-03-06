@@ -73,14 +73,6 @@ export const FIELD_GROUPS = [
     ],
   },
   {
-    title: "IMEI Lookup",
-    description: "Auto-identify device brand and model from IMEI when a user starts a device assessment. Uses ifreeicloud service code 0.",
-    fields: [
-      { key: "IMEI_SERVICE_URL", label: "Service URL",  type: "text",     placeholder: "https://api.ifreeicloud.co.uk/", required: false },
-      { key: "IMEI_SERVICE_KEY", label: "Service Key",  type: "password", placeholder: "your-api-key",                    required: false },
-    ],
-  },
-  {
     title: "SMS (Twilio)",
     description: `Send SMS messages via Twilio. Get your credentials at <a href="https://console.twilio.com" target="_blank" style="color:var(--accent)">console.twilio.com</a>. Used by the send_sms action script.`,
     fields: [
