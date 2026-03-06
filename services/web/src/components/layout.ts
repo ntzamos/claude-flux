@@ -73,8 +73,6 @@ export function layout(title: string, content: string, activeTab?: string, theme
     { id: "chat",     label: "Chat",     icon: "message-circle" },
     { id: "memory",   label: "Memory",   icon: "brain" },
     { id: "lists",    label: "Lists",    icon: "list" },
-    { id: "devices",  label: "Devices",  icon: "smartphone" },
-    { id: "rulebook", label: "Rulebook", icon: "book-open" },
     { id: "files",    label: "Files",    icon: "folder" },
     { id: "mcp",      label: "MCP",      icon: "plug" },
     { id: "commands", label: "Commands", icon: "terminal" },

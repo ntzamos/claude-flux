@@ -571,53 +571,6 @@ const server = Bun.serve({
       }
     }
 
-    // ── Grading Rulebook ──────────────────────────────────────
-
-    if (pathname === "/api/rulebook" && req.method === "POST") {
-      const form = await req.formData();
-      const category = (form.get("category") as string)?.trim() || "grading";
-      const rule     = (form.get("rule")     as string)?.trim();
-      if (!rule) {
-        return redirect(`/dashboard?tab=rulebook&toast=error&msg=${encodeURIComponent("Rule text is required.")}`);
-      }
-      try {
-        await sql`INSERT INTO grading_rulebook (category, rule) VALUES (${category}, ${rule})`;
-        return redirect(`/dashboard?tab=rulebook&toast=success&msg=${encodeURIComponent("Rule added.")}`);
-      } catch (err: any) {
-        return redirect(`/dashboard?tab=rulebook&toast=error&msg=${encodeURIComponent(err.message)}`);
-      }
-    }
-
-    const ruleEditMatch = pathname.match(/^\/api\/rulebook\/([^/]+)\/edit$/);
-    if (ruleEditMatch && req.method === "POST") {
-      const id = ruleEditMatch[1];
-      const form = await req.formData();
-      const category = (form.get("category") as string)?.trim() || "grading";
-      const rule     = (form.get("rule")     as string)?.trim();
-      const active   = form.get("active") === "true";
-      try {
-        await sql`
-          UPDATE grading_rulebook
-          SET category = ${category}, rule = ${rule}, active = ${active}, updated_at = NOW()
-          WHERE id = ${id}
-        `;
-        return redirect(`/dashboard?tab=rulebook&toast=success&msg=${encodeURIComponent("Rule updated.")}`);
-      } catch (err: any) {
-        return redirect(`/dashboard?tab=rulebook&toast=error&msg=${encodeURIComponent(err.message)}`);
-      }
-    }
-
-    const ruleDeleteMatch = pathname.match(/^\/api\/rulebook\/([^/]+)\/delete$/);
-    if (ruleDeleteMatch && req.method === "POST") {
-      const id = ruleDeleteMatch[1];
-      try {
-        await sql`DELETE FROM grading_rulebook WHERE id = ${id}`;
-        return redirect(`/dashboard?tab=rulebook&toast=success&msg=${encodeURIComponent("Rule deleted.")}`);
-      } catch (err: any) {
-        return redirect(`/dashboard?tab=rulebook&toast=error&msg=${encodeURIComponent(err.message)}`);
-      }
-    }
-
     // ── Files ─────────────────────────────────────────────────
 
     // Serve a generated file (supports subdirectories)
@@ -1072,58 +1025,6 @@ const server = Bun.serve({
         return json({ error: "Relay unavailable: " + err.message }, 502);
       }
     }
-
-    // ── Device assessments ──────────────────────────────────────
-    if (pathname === "/api/devices" && req.method === "GET") {
-      try {
-        const data = await sql`
-          SELECT id, imei, device_info, overall_grade, status,
-                 COALESCE(array_length(front_images,1),0) AS front_count,
-                 COALESCE(array_length(back_images,1),0)  AS back_count,
-                 COALESCE(array_length(frame_images,1),0) AS frame_count,
-                 created_at
-          FROM device_assessments
-          ORDER BY created_at DESC LIMIT 100
-        `;
-        return json(data);
-      } catch (err: any) {
-        return json({ error: err.message }, 500);
-      }
-    }
-
-    // GET /api/devices/:id — full detail including per-image results
-    const deviceDetailMatch = pathname.match(/^\/api\/devices\/([^/]+)$/);
-    if (deviceDetailMatch && req.method === "GET") {
-      const id = deviceDetailMatch[1];
-      if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: "Invalid ID" }, 400);
-      try {
-        const [assessment] = await sql`SELECT * FROM device_assessments WHERE id = ${id}`;
-        if (!assessment) return json({ error: "Not found" }, 404);
-        const imageResults = await sql`
-          SELECT * FROM device_image_results WHERE assessment_id = ${id} ORDER BY side, id
-        `;
-        return json({ ...assessment, image_results: imageResults });
-      } catch (err: any) {
-        return json({ error: err.message }, 500);
-      }
-    }
-
-    const deviceDeleteMatch = pathname.match(/^\/api\/devices\/([^/]+)\/delete$/);
-    if (deviceDeleteMatch && req.method === "POST") {
-      const id = deviceDeleteMatch[1];
-      if (!/^[0-9a-f-]{36}$/.test(id)) {
-        return redirect(`/dashboard?tab=devices&toast=error&msg=${encodeURIComponent("Invalid ID.")}`);
-      }
-      try {
-        await sql`DELETE FROM device_assessments WHERE id = ${id}`;
-        const { rm } = await import("fs/promises");
-        await rm(`/files/devices/${id}`, { recursive: true, force: true });
-        return redirect(`/dashboard?tab=devices&toast=success&msg=${encodeURIComponent("Assessment deleted.")}`);
-      } catch (err: any) {
-        return redirect(`/dashboard?tab=devices&toast=error&msg=${encodeURIComponent(err.message)}`);
-      }
-    }
-    // ── End device assessments ──────────────────────────────────
 
     return new Response("Not Found", { status: 404 });
   },

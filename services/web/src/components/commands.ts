@@ -12,7 +12,6 @@ const BUILTIN_COMMANDS = [
   { command: "callme",   description: "Start an AI phone call (requires ElevenLabs)" },
   { command: "mcps",     description: "List all installed MCP servers" },
   { command: "tunnel",   description: "Enable/disable remote dashboard access (/tunnel on|off|status)" },
-  { command: "detect",      description: "Detect defects in an image — send as caption with a photo" },
   { command: "newsession",  description: "Clear current Claude session and start fresh" },
 ];
 
