@@ -1345,59 +1345,6 @@ async function recoverPendingMessages(): Promise<void> {
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text;
 
-  // ── Device assessment text intercept ────────────────────────
-  const deviceState = await getAssessmentState(ctx.chat!.id);
-  if (deviceState) {
-    if (text.startsWith("/")) {
-      // Allow /device and /help through; block all other commands during assessment
-      if (!text.startsWith("/device") && !text.startsWith("/help")) {
-        await ctx.reply(
-          "You have an active device assessment. Send photos or use /device to manage it.",
-          { reply_markup: new InlineKeyboard().text("Cancel Assessment", "device:cancel") }
-        );
-        return;
-      }
-    } else if (deviceState.current_step === "pending_imei") {
-      const imei = text.trim();
-      await sql`UPDATE device_assessments SET imei = ${imei}, updated_at = NOW() WHERE id = ${deviceState.assessment_id}`;
-      const deviceObj = await lookupImei(imei);
-      if (deviceObj) {
-        const description = [deviceObj.brand, deviceObj.model].filter(Boolean).join(" ").trim() || null;
-        const info = { ...deviceObj, ...(description ? { description } : {}) };
-        await sql`UPDATE device_assessments SET device_info = ${JSON.stringify(info)}, updated_at = NOW() WHERE id = ${deviceState.assessment_id}`;
-        await advanceStep(ctx.chat!.id, "collecting_front");
-        await ctx.reply(
-          `IMEI saved. Device identified: *${description || "Unknown"}*\n\nNow send FRONT photos of the device.`,
-          { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("Done — front photos collected", "device:done_front") }
-        );
-      } else {
-        await advanceStep(ctx.chat!.id, "pending_info");
-        await ctx.reply(
-          "IMEI saved. What device is this? (e.g. iPhone 14 Pro 256GB) Or tap Skip.",
-          { reply_markup: new InlineKeyboard().text("Skip Info", "device:skip_info") }
-        );
-      }
-      return;
-    } else if (deviceState.current_step === "pending_info") {
-      await sql`UPDATE device_assessments SET device_info = ${JSON.stringify({ description: text.trim() })}, updated_at = NOW() WHERE id = ${deviceState.assessment_id}`;
-      await advanceStep(ctx.chat!.id, "collecting_front");
-      await ctx.reply(
-        "Device info saved. Now send photos of the FRONT of the device (screen side). Tap Done when ready.",
-        { reply_markup: new InlineKeyboard().text("Done — front photos collected", "device:done_front") }
-      );
-      return;
-    } else if (deviceState.current_step.startsWith("collecting_")) {
-      const side = deviceState.current_step.replace("collecting_", "");
-      const doneData = `device:done_${side}`;
-      const kb = side === "frame"
-        ? new InlineKeyboard().text("Done — frame photos collected", "device:done_frame").row().text("Skip frame photos", "device:skip_frame")
-        : new InlineKeyboard().text(`Done — ${side} photos collected`, doneData);
-      await ctx.reply(`Send ${side} photos or tap Done.`, { reply_markup: kb });
-      return;
-    }
-  }
-  // ─────────────────────────────────────────────────────────
-
   // Skip commands — handled above
   if (text.startsWith("/")) return;
 
