@@ -27,9 +27,12 @@ RESPONSE=$(curl -s -X POST \
   --data-urlencode "From=${FROM}" \
   --data-urlencode "Body=${BODY}")
 
-SID=$(echo "$RESPONSE" | grep -o '"sid":"SM[^"]*"' | head -1)
-if [ -n "$SID" ]; then
-  echo "SMS sent successfully. $SID"
+SID=$(echo "$RESPONSE" | grep -o '"sid"[[:space:]]*:[[:space:]]*"SM[^"]*"' | head -1)
+STATUS=$(echo "$RESPONSE" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1)
+ERROR_CODE=$(echo "$RESPONSE" | grep -o '"error_code"[[:space:]]*:[[:space:]]*[^,}]*' | head -1)
+
+if [ -n "$SID" ] && echo "$ERROR_CODE" | grep -q "null"; then
+  echo "SMS sent successfully. $SID ($STATUS)"
 else
   echo "Error sending SMS: $RESPONSE"
   exit 1
