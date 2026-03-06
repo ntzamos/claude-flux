@@ -48,17 +48,17 @@ RUN npm install -g @anthropic-ai/claude-code
 RUN useradd -m -u 1001 relay
 
 # ── Relay dependencies ────────────────────────────────────
-WORKDIR /home/relay/app/services/relay
+WORKDIR /app/services/relay
 COPY services/relay/package.json services/relay/bun.lock* ./
 RUN bun install --production
 
 # ── Web dependencies ──────────────────────────────────────
-WORKDIR /home/relay/app/services/web
+WORKDIR /app/services/web
 COPY services/web/package.json services/web/bun.lock* ./
 RUN bun install --production
 
 # ── Full project copy ─────────────────────────────────────
-WORKDIR /home/relay/app
+WORKDIR /app
 COPY . .
 
 # ── Helpers ───────────────────────────────────────────────
@@ -71,6 +71,7 @@ RUN mkdir -p /home/relay/.claude-relay \
     && mkdir -p /files \
     && mkdir -p /whisper-models \
     && chown -R relay:relay /home/relay \
+    && chown -R relay:relay /app \
     && chown relay:relay /files \
     && chown relay:relay /whisper-models \
     && echo "relay ALL=(root) NOPASSWD: /bin/chown relay\\:relay /files" >> /etc/sudoers

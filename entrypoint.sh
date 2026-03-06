@@ -19,7 +19,7 @@ echo "[init] Database is ready."
 echo "[init] Applying migrations..."
 APPLIED=0
 FAILED=0
-for f in /home/relay/app/migrations/*.sql; do
+for f in /app/migrations/*.sql; do
   echo "[init] Running $(basename $f)..."
   if psql "$DATABASE_URL" -f "$f" 2>&1; then
     APPLIED=$((APPLIED + 1))
@@ -58,13 +58,13 @@ fi
 
 # Start web dashboard on port 3000 (docker-compose maps this to host port 80)
 echo "[init] Starting web dashboard..."
-cd /home/relay/app/services/web
+cd /app/services/web
 PORT=3000 bun run src/server.ts &
 WEB_PID=$!
 
 # Start relay
 echo "[init] Starting relay..."
-cd /home/relay/app/services/relay
+cd /app/services/relay
 bun run src/relay.ts &
 RELAY_PID=$!
 

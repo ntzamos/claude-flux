@@ -694,7 +694,7 @@ bot.on("callback_query:data", async (ctx) => {
     await ctx.answerCallbackQuery("Pulling latest code...");
     await ctx.reply("⬆️ Pulling latest code...");
     try {
-      const pull = spawn(["git", "pull"], { stdout: "pipe", stderr: "pipe", cwd: "/home/relay/app" });
+      const pull = spawn(["git", "pull"], { stdout: "pipe", stderr: "pipe", cwd: "/app" });
       const out = await new Response(pull.stdout).text();
       const err = await new Response(pull.stderr).text();
       const code = await pull.exited;
@@ -1026,7 +1026,7 @@ bot.command("update", async (ctx) => {
     const pull = spawn(["git", "pull"], {
       stdout: "pipe",
       stderr: "pipe",
-      cwd: "/home/relay/app",
+      cwd: "/app",
     });
     const out = await new Response(pull.stdout).text();
     const err = await new Response(pull.stderr).text();
@@ -1238,7 +1238,7 @@ bot.command("fetch", async (ctx) => {
 
   try {
     // Delegate to actions/url_to_md.sh — fetches via jina.ai, saves to /files/, returns path
-    const scriptPath = "/home/relay/app/actions/url_to_md.sh";
+    const scriptPath = "/app/actions/url_to_md.sh";
     const proc = spawn(["bash", scriptPath, url], { stdout: "pipe", stderr: "pipe" });
     const filePath = (await new Response(proc.stdout).text()).trim();
     const stderr = (await new Response(proc.stderr).text()).trim();

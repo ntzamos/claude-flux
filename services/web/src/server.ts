@@ -232,7 +232,7 @@ const server = Bun.serve({
     // ── Landing page ─────────────────────────────────────────
     if (pathname === "/landing") {
       // @ts-ignore
-      const file = Bun.file("/home/relay/app/docs/index.html");
+      const file = Bun.file("/app/docs/index.html");
       return new Response(file, { headers: { "Content-Type": "text/html" } });
     }
 
