@@ -7,7 +7,7 @@ const AUDIO_EXTS = ["mp3","ogg","wav","webm","m4a","aac","opus"];
 function renderFileTag(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (IMG_EXTS.includes(ext))
-    return `<img src="/files/${name}" style="max-width:100%;max-height:260px;border-radius:8px;margin-top:0.4rem;display:block;object-fit:contain" loading="lazy">`;
+    return `<img src="/files/${name}" style="max-width:200px;max-height:200px;border-radius:8px;margin-top:0.4rem;display:block;object-fit:contain" loading="lazy">`;
   if (AUDIO_EXTS.includes(ext))
     return `<audio controls src="/files/${name}" style="width:100%;margin-top:0.4rem;display:block"></audio>`;
   return `<a href="/files/${name}" target="_blank" style="color:var(--accent);text-decoration:underline">&#128206; ${name}</a>`;
@@ -148,7 +148,7 @@ export async function renderChat(): Promise<string> {
     function renderFileTag(name) {
       var ext = getExt(name);
       if (IMG_EXTS.indexOf(ext) >= 0)
-        return '<img src="/files/' + name + '" style="max-width:100%;max-height:260px;border-radius:8px;margin-top:0.4rem;display:block;object-fit:contain" loading="lazy">';
+        return '<img src="/files/' + name + '" style="max-width:200px;max-height:200px;border-radius:8px;margin-top:0.4rem;display:block;object-fit:contain" loading="lazy">';
       if (AUDIO_EXTS.indexOf(ext) >= 0)
         return '<audio controls src="/files/' + name + '" style="width:100%;margin-top:0.4rem;display:block"></audio>';
       return '<a href="/files/' + name + '" target="_blank" style="color:var(--accent);text-decoration:underline">&#128206; ' + name + '</a>';
