@@ -309,8 +309,9 @@ export async function renderChat(): Promise<string> {
           mediaRecorder.onstop = function() {
             var blob = new Blob(audioChunks, { type: "audio/webm" });
             var ts   = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-            showPreview(blob, "recording-" + ts + ".webm");
+            pendingFile = { blob: blob, filename: "recording-" + ts + ".webm" };
             stream.getTracks().forEach(function(t) { t.stop(); });
+            window.sendChatMsg();
           };
           mediaRecorder.start();
           window._recording = true;
