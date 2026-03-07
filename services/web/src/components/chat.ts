@@ -14,7 +14,8 @@ function renderFileTag(name: string): string {
 }
 
 function renderContent(s: string): string {
-  return s.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  return s.replace(/\[SYSTEM:[^\]]*\]/gi, "").trim()
+    .replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/\[(?:FILE|ATTACHED):\s*(?:\/files\/)?([^\]]+)\]/gi, (_, fn) => renderFileTag(fn.trim()));
 }
 
