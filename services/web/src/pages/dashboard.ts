@@ -33,24 +33,29 @@ async function renderStatus(): Promise<string> {
   const hasName        = !!settings.USER_NAME;
   const hasVoiceReply  = !!settings.ELEVENLABS_API_KEY;
   const hasMemory      = !!settings.OPENAI_API_KEY;
-  // Resolve public URL: Railway > ngrok custom domain > ngrok agent
+  // Resolve public URL: Railway env (always reliable) or verify ngrok is actually running
+  const isRailway = !!process.env.RAILWAY_PUBLIC_DOMAIN;
+  const ngrokDomainSet = !!settings.NGROK_DOMAIN?.trim();
   let tunnelUrl = "";
   if (process.env.RAILWAY_PUBLIC_DOMAIN) {
     tunnelUrl = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
-  } else if (settings.NGROK_DOMAIN?.trim()) {
-    tunnelUrl = `https://${settings.NGROK_DOMAIN.trim().replace(/^https?:\/\//, "")}`;
   } else {
+    // Always verify ngrok is live — never trust the domain setting alone
     try {
       const r = await fetch("http://localhost:4040/api/tunnels", { signal: AbortSignal.timeout(2000) });
       if (r.ok) {
         const data = await r.json() as any;
-        tunnelUrl = (data.tunnels as any[])?.find((t: any) => t.proto === "https")?.public_url ?? "";
+        const activeTunnel = (data.tunnels as any[])?.find((t: any) => t.proto === "https");
+        if (activeTunnel) {
+          // Prefer configured domain if it matches, else use whatever ngrok reports
+          tunnelUrl = ngrokDomainSet
+            ? `https://${settings.NGROK_DOMAIN!.trim().replace(/^https?:\/\//, "")}`
+            : activeTunnel.public_url;
+        }
       }
     } catch {}
   }
   const hasNgrok = !!tunnelUrl;
-  const isRailway = !!process.env.RAILWAY_PUBLIC_DOMAIN;
-  const ngrokDomainSet = !!settings.NGROK_DOMAIN?.trim();
 
   // Auto-discover whisper model the same way the relay does
   const whisperModel = settings.WHISPER_MODEL_PATH?.trim() ||
