@@ -1198,6 +1198,69 @@ const server = Bun.serve({
       }
     }
 
+    if (pathname === "/api/widgets" && req.method === "GET") {
+      const settings = await getSettings();
+      const location = settings.WEATHER_LOCATION?.trim() || "";
+
+      async function fetchWeather() {
+        try {
+          const q = location ? encodeURIComponent(location) : "";
+          const url = `https://wttr.in/${q}?format=j1`;
+          const r = await fetch(url, { signal: AbortSignal.timeout(5000), headers: { "User-Agent": "curl/7.88.1" } });
+          if (!r.ok) return null;
+          const d = await r.json() as any;
+          const cur = d.current_condition?.[0];
+          const area = d.nearest_area?.[0];
+          const city = area?.areaName?.[0]?.value || area?.region?.[0]?.value || "Unknown";
+          const country = area?.country?.[0]?.value || "";
+          return {
+            city: country ? `${city}, ${country}` : city,
+            temp_c: cur?.temp_C,
+            temp_f: cur?.temp_F,
+            desc: cur?.weatherDesc?.[0]?.value || "",
+            humidity: cur?.humidity,
+            feels_c: cur?.FeelsLikeC,
+            wind_kmph: cur?.windspeedKmph,
+          };
+        } catch { return null; }
+      }
+
+      async function fetchBinancePrice(symbol: string) {
+        try {
+          const r = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`, { signal: AbortSignal.timeout(5000) });
+          if (!r.ok) return null;
+          const d = await r.json() as any;
+          return { price: parseFloat(d.lastPrice), change: parseFloat(d.priceChangePercent) };
+        } catch { return null; }
+      }
+
+      async function fetchYahooPrice(symbol: string) {
+        try {
+          const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`, {
+            signal: AbortSignal.timeout(5000),
+            headers: { "User-Agent": "Mozilla/5.0" },
+          });
+          if (!r.ok) return null;
+          const d = await r.json() as any;
+          const meta = d.chart?.result?.[0]?.meta;
+          if (!meta) return null;
+          const price = meta.regularMarketPrice;
+          const prev = meta.chartPreviousClose || meta.previousClose;
+          const change = prev ? ((price - prev) / prev) * 100 : 0;
+          return { price, change };
+        } catch { return null; }
+      }
+
+      const [weather, btc, tsla, nvda] = await Promise.all([
+        fetchWeather(),
+        fetchBinancePrice("BTCUSDT"),
+        fetchYahooPrice("TSLA"),
+        fetchYahooPrice("NVDA"),
+      ]);
+
+      return json({ weather, market: { btc, tsla, nvda } });
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 });

@@ -95,6 +95,27 @@ async function renderStatus(): Promise<string> {
     </div>
   </div>
 
+  <div class="grid-2" style="margin-bottom:1rem;">
+    <div class="card" id="weather-card">
+      <div class="card-title" style="display:flex;align-items:center;gap:0.5rem;">
+        <span>Weather</span>
+        <span id="weather-location" style="color:var(--muted);font-size:0.8rem;font-weight:400;"></span>
+      </div>
+      <div id="weather-body" style="display:flex;align-items:center;gap:1.5rem;min-height:64px;">
+        <div style="color:var(--muted);font-size:0.85rem;">Loading...</div>
+      </div>
+    </div>
+    <div class="card" id="market-card">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Markets</span>
+        <span id="market-updated" style="color:var(--muted);font-size:0.75rem;font-weight:400;"></span>
+      </div>
+      <div id="market-body" style="min-height:64px;">
+        <div style="color:var(--muted);font-size:0.85rem;">Loading...</div>
+      </div>
+    </div>
+  </div>
+
   <div class="grid-2">
     <div class="card">
       <div class="card-title">Configuration</div>
@@ -127,7 +148,85 @@ async function renderStatus(): Promise<string> {
         <a href="/onboarding?step=telegram" class="btn btn-outline btn-sm">Re-run setup wizard</a>
       </div>
     </div>
-  </div>`;
+  </div>
+
+  <script>
+  (function() {
+    var weatherIcons = {
+      "Sunny": "☀️", "Clear": "🌙", "Partly cloudy": "⛅", "Cloudy": "☁️",
+      "Overcast": "☁️", "Mist": "🌫️", "Fog": "🌫️", "Freezing fog": "🌫️",
+      "Light rain": "🌦️", "Moderate rain": "🌧️", "Heavy rain": "🌧️",
+      "Light snow": "🌨️", "Moderate snow": "❄️", "Heavy snow": "❄️",
+      "Blizzard": "🌨️", "Thundery outbreaks": "⛈️", "Patchy rain": "🌦️",
+      "Drizzle": "🌦️", "Light sleet": "🌨️", "Thunder": "⛈️",
+    };
+    function weatherIcon(desc) {
+      if (!desc) return "🌡️";
+      for (var k in weatherIcons) {
+        if (desc.toLowerCase().indexOf(k.toLowerCase()) !== -1) return weatherIcons[k];
+      }
+      return "🌡️";
+    }
+    function fmt(n, decimals) {
+      if (n == null) return "—";
+      return Number(n).toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+    function changeHtml(pct) {
+      if (pct == null) return "";
+      var color = pct >= 0 ? "#4caf82" : "#ff7070";
+      var arrow = pct >= 0 ? "▲" : "▼";
+      return "<span style=\\"color:" + color + ";font-size:0.78rem;\\">" + arrow + " " + Math.abs(pct).toFixed(2) + "%</span>";
+    }
+    function renderWidgets(data) {
+      var w = data.weather;
+      var m = data.market;
+      if (w) {
+        document.getElementById("weather-location").textContent = w.city || "";
+        document.getElementById("weather-body").innerHTML =
+          "<div style=\\"font-size:2.8rem;line-height:1;\\">" + weatherIcon(w.desc) + "</div>" +
+          "<div>" +
+            "<div style=\\"font-size:1.8rem;font-weight:700;line-height:1;\\">" + w.temp_c + "°C</div>" +
+            "<div style=\\"color:var(--muted);font-size:0.82rem;margin-top:2px;\\">" + w.desc + "</div>" +
+            "<div style=\\"color:var(--muted);font-size:0.78rem;margin-top:4px;\\">" +
+              "Feels " + w.feels_c + "°C &nbsp;·&nbsp; " +
+              "Humidity " + w.humidity + "% &nbsp;·&nbsp; " +
+              "Wind " + w.wind_kmph + " km/h" +
+            "</div>" +
+          "</div>";
+      } else {
+        document.getElementById("weather-body").innerHTML = "<div style=\\"color:var(--muted);font-size:0.85rem;\\">Weather unavailable</div>";
+      }
+      if (m) {
+        var rows = [
+          { label: "BTC", data: m.btc, decimals: 0, prefix: "$" },
+          { label: "TSLA", data: m.tsla, decimals: 2, prefix: "$" },
+          { label: "NVDA", data: m.nvda, decimals: 2, prefix: "$" },
+        ];
+        var html = "<table style=\\"width:100%;border-collapse:collapse;\\">";
+        rows.forEach(function(r) {
+          html += "<tr>" +
+            "<td style=\\"color:var(--muted);font-size:0.82rem;padding:4px 8px 4px 0;width:52px;\\">" + r.label + "</td>" +
+            "<td style=\\"font-weight:600;font-size:0.95rem;padding:4px 8px 4px 0;\\">" +
+              (r.data ? r.prefix + fmt(r.data.price, r.decimals) : "—") +
+            "</td>" +
+            "<td style=\\"padding:4px 0;\\">" + (r.data ? changeHtml(r.data.change) : "") + "</td>" +
+          "</tr>";
+        });
+        html += "</table>";
+        document.getElementById("market-body").innerHTML = html;
+        var now = new Date();
+        document.getElementById("market-updated").textContent = "updated " + now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      } else {
+        document.getElementById("market-body").innerHTML = "<div style=\\"color:var(--muted);font-size:0.85rem;\\">Market data unavailable</div>";
+      }
+    }
+    function loadWidgets() {
+      fetch("/api/widgets").then(function(r) { return r.json(); }).then(renderWidgets).catch(function() {});
+    }
+    loadWidgets();
+    setInterval(loadWidgets, 30000);
+  })();
+  </script>`;
 }
 
 export async function renderDashboard(
