@@ -1251,14 +1251,63 @@ const server = Bun.serve({
         } catch { return null; }
       }
 
-      const [weather, btc, tsla, nvda] = await Promise.all([
+      let symbols: Array<{symbol: string; source: string; label: string}>;
+      try { symbols = settings.MARKET_SYMBOLS ? JSON.parse(settings.MARKET_SYMBOLS) : null as any; } catch { symbols = null as any; }
+      if (!symbols || !symbols.length) {
+        symbols = [
+          { symbol: "BTCUSDT", source: "binance", label: "BTC" },
+          { symbol: "TSLA",    source: "yahoo",   label: "TSLA" },
+          { symbol: "NVDA",    source: "yahoo",   label: "NVDA" },
+        ];
+      }
+
+      const [weather, ...prices] = await Promise.all([
         fetchWeather(),
-        fetchBinancePrice("BTCUSDT"),
-        fetchYahooPrice("TSLA"),
-        fetchYahooPrice("NVDA"),
+        ...symbols.map((s: any) => s.source === "binance" ? fetchBinancePrice(s.symbol) : fetchYahooPrice(s.symbol)),
       ]);
 
-      return json({ weather, market: { btc, tsla, nvda } });
+      const market = symbols.map((s: any, i: number) => ({ label: s.label, ...(prices[i] || { price: null, change: null }) }));
+      return json({ weather, market, symbols });
+    }
+
+    if (pathname === "/api/widgets/search-symbol" && req.method === "GET") {
+      const q = url.searchParams.get("q")?.trim() || "";
+      if (!q) return json({ results: [] });
+      const results: any[] = [];
+      const binSym = q.toUpperCase().replace(/[^A-Z0-9]/g, "") + "USDT";
+      try {
+        const br = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${binSym}`, { signal: AbortSignal.timeout(3000) });
+        if (br.ok) {
+          const bd = await br.json() as any;
+          if (bd.price) results.push({ symbol: binSym, label: q.toUpperCase().replace(/[^A-Z0-9]/g, ""), name: `${q.toUpperCase()} / USDT (Binance)`, source: "binance", type: "Crypto" });
+        }
+      } catch {}
+      try {
+        const yr = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=6&lang=en-US`, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(5000) });
+        if (yr.ok) {
+          const yd = await yr.json() as any;
+          for (const item of (yd.quotes || []).slice(0, 6)) {
+            if (item.symbol && item.quoteType !== "OPTION") {
+              results.push({ symbol: item.symbol, label: item.symbol, name: item.shortname || item.longname || item.symbol, source: "yahoo", type: item.quoteType });
+            }
+          }
+        }
+      } catch {}
+      return json({ results: results.slice(0, 8) });
+    }
+
+    if (pathname === "/api/widgets/weather" && req.method === "POST") {
+      const body = await req.json() as any;
+      const loc = (body.location || "").trim();
+      await sql`INSERT INTO settings (key, value) VALUES ('WEATHER_LOCATION', ${loc}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+      return json({ ok: true });
+    }
+
+    if (pathname === "/api/widgets/markets" && req.method === "POST") {
+      const body = await req.json() as any;
+      const syms = Array.isArray(body.symbols) ? body.symbols : [];
+      await sql`INSERT INTO settings (key, value) VALUES ('MARKET_SYMBOLS', ${JSON.stringify(syms)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+      return json({ ok: true });
     }
 
     return new Response("Not Found", { status: 404 });
