@@ -3,7 +3,7 @@
 # Press the button on your bridge BEFORE running this script.
 # Outputs JSON: {"ok":true,"ip":"...","token":"..."} or {"ok":false,"error":"..."}
 
-set -euo pipefail
+set -eo pipefail
 
 fail() { echo "{\"ok\":false,\"error\":\"$1\"}"; exit 0; }
 
@@ -24,9 +24,9 @@ fi
 # Fallback: scan common subnets for the bridge (looks for /api endpoint)
 if [ -z "$BRIDGE_IP" ]; then
   # Get local subnet from default route
-  SUBNET=$(ip route 2>/dev/null | grep "src " | head -1 | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.' | head -1)
+  SUBNET=$(ip route 2>/dev/null | grep "src " | head -1 | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.' | head -1 || true)
   if [ -z "$SUBNET" ]; then
-    SUBNET=$(route -n get default 2>/dev/null | grep 'gateway' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.' | head -1)
+    SUBNET=$(route -n get default 2>/dev/null | grep 'gateway' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.' | head -1 || true)
   fi
   if [ -n "$SUBNET" ]; then
     for i in $(seq 1 254); do
