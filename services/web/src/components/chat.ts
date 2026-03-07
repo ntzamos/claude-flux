@@ -71,44 +71,57 @@ export async function renderChat(): Promise<string> {
 
     <!-- Input bar -->
     <div style="padding-top:0.75rem;border-top:1px solid var(--border);">
-      <div style="display:flex;gap:0.5rem;align-items:flex-end;">
+      <!-- Pill container -->
+      <div id="chat-pill"
+        style="display:flex;align-items:center;gap:0;
+               border:1px solid var(--border2);border-radius:999px;
+               background:var(--surface2);padding:0.35rem 0.5rem 0.35rem 0.6rem;
+               transition:border-color 0.15s;">
 
-        <!-- Attach file -->
+        <!-- Hidden file input -->
         <input type="file" id="file-input" style="display:none"
           accept="image/*,audio/*,video/*,.pdf,.txt,.md,.json,.csv,.zip"
           onchange="handleFileSelect(this)">
+
+        <!-- + (attach) -->
         <button id="attach-btn" title="Attach file" onclick="document.getElementById('file-input').click()"
-          style="background:var(--surface2);border:1px solid var(--border2);color:var(--muted);border-radius:8px;padding:0.62rem 0.75rem;cursor:pointer;font-size:1rem;flex-shrink:0;line-height:1;transition:color 0.15s,border-color 0.15s"
-          onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
-          onmouseout="this.style.color='var(--muted)';this.style.borderColor=''">&#128206;</button>
+          style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.25rem;
+                 font-weight:300;line-height:1;padding:0.1rem 0.5rem 0.1rem 0.15rem;flex-shrink:0;
+                 transition:color 0.15s;"
+          onmouseover="this.style.color='var(--text)'"
+          onmouseout="this.style.color='var(--muted)'">+</button>
 
-        <!-- Record audio -->
-        <button id="mic-btn" title="Record audio" onclick="toggleRecording()"
-          style="background:var(--surface2);border:1px solid var(--border2);color:var(--muted);border-radius:8px;padding:0.62rem 0.75rem;cursor:pointer;font-size:1rem;flex-shrink:0;line-height:1;transition:color 0.15s,border-color 0.15s,background 0.15s"
-          onmouseover="if(!window._recording){this.style.color='var(--accent)';this.style.borderColor='var(--accent)'}"
-          onmouseout="if(!window._recording){this.style.color='var(--muted)';this.style.borderColor=''}">&#127908;</button>
+        <!-- Divider -->
+        <div style="width:1px;height:1.2rem;background:var(--border2);flex-shrink:0;margin-right:0.4rem"></div>
 
-        <!-- Message textarea -->
-        <textarea id="chat-input" rows="1" placeholder="Message Claude&hellip;"
-          style="flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);
-                 border-radius:10px;padding:0.65rem 0.9rem;font-size:0.88rem;font-family:inherit;
-                 outline:none;resize:none;line-height:1.45;max-height:140px;overflow-y:auto;
-                 transition:border-color 0.15s;"
+        <!-- Textarea -->
+        <textarea id="chat-input" rows="1" placeholder="Ask anything"
+          style="flex:1;background:none;border:none;color:var(--text);
+                 padding:0.3rem 0.5rem 0.3rem 0;font-size:0.9rem;font-family:inherit;
+                 outline:none;resize:none;line-height:1.5;max-height:140px;overflow-y:auto;"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg();}"
           oninput="autoResize(this)"
-          onfocus="this.style.borderColor='var(--accent)'"
-          onblur="this.style.borderColor=''"
+          onfocus="document.getElementById('chat-pill').style.borderColor='var(--accent)'"
+          onblur="document.getElementById('chat-pill').style.borderColor=''"
         ></textarea>
 
-        <!-- Send -->
-        <button id="chat-send-btn" onclick="sendChatMsg()"
-          style="background:var(--accent);color:#030f07;border:none;border-radius:10px;
-                 padding:0.65rem 1.1rem;font-size:0.78rem;font-weight:700;font-family:inherit;
-                 cursor:pointer;text-transform:uppercase;letter-spacing:0.07em;white-space:nowrap;
-                 transition:background 0.15s;flex-shrink:0;"
-          onmouseover="this.style.background='#1ffb8a'"
-          onmouseout="this.style.background='var(--accent)'"
-        >Send</button>
+        <!-- Voice pill button -->
+        <button id="mic-btn" title="Record audio" onclick="toggleRecording()"
+          style="display:flex;align-items:center;gap:0.35rem;
+                 background:var(--surface);border:1px solid var(--border);
+                 color:var(--text);border-radius:999px;
+                 padding:0.38rem 0.85rem 0.38rem 0.7rem;
+                 cursor:pointer;font-size:0.82rem;font-weight:500;font-family:inherit;
+                 flex-shrink:0;white-space:nowrap;transition:all 0.15s;">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0">
+            <rect x="0"  y="5" width="2" height="4" rx="1" fill="currentColor"/>
+            <rect x="3"  y="3" width="2" height="8" rx="1" fill="currentColor"/>
+            <rect x="6"  y="1" width="2" height="12" rx="1" fill="currentColor"/>
+            <rect x="9"  y="3" width="2" height="8" rx="1" fill="currentColor"/>
+            <rect x="12" y="5" width="2" height="4" rx="1" fill="currentColor"/>
+          </svg>
+          <span id="mic-label">Voice</span>
+        </button>
       </div>
       <div id="chat-status" style="height:1rem;margin-top:0.3rem;font-size:0.7rem;color:var(--muted);"></div>
     </div>
@@ -301,15 +314,17 @@ export async function renderChat(): Promise<string> {
           };
           mediaRecorder.start();
           window._recording = true;
-          var btn = document.getElementById("mic-btn");
-          btn.style.background = "rgba(255,82,82,0.15)";
+          var btn   = document.getElementById("mic-btn");
+          var label = document.getElementById("mic-label");
+          btn.style.background  = "rgba(255,82,82,0.15)";
           btn.style.borderColor = "#ff5252";
           btn.style.color       = "#ff5252";
           btn.title = "Stop recording";
+          if (label) label.textContent = "Stop";
         } catch(e) {
           var st = document.getElementById("chat-status");
-          st.style.color   = "var(--red)";
-          st.textContent   = "Microphone access denied.";
+          st.style.color  = "var(--red)";
+          st.textContent  = "Microphone access denied.";
         }
       }
     };
@@ -318,11 +333,13 @@ export async function renderChat(): Promise<string> {
       if (mediaRecorder && window._recording) {
         mediaRecorder.stop();
         window._recording = false;
-        var btn = document.getElementById("mic-btn");
+        var btn   = document.getElementById("mic-btn");
+        var label = document.getElementById("mic-label");
         btn.style.background  = "";
         btn.style.borderColor = "";
-        btn.style.color       = "var(--muted)";
+        btn.style.color       = "";
         btn.title = "Record audio";
+        if (label) label.textContent = "Voice";
       }
     }
 
@@ -342,12 +359,13 @@ export async function renderChat(): Promise<string> {
       el.style.height = Math.min(el.scrollHeight, 140) + "px";
     };
 
+    var _sending = false;
+
     window.sendChatMsg = async function() {
       var input  = document.getElementById("chat-input");
-      var btn    = document.getElementById("chat-send-btn");
       var status = document.getElementById("chat-status");
       var msg    = input.value.trim();
-      if ((!msg && !pendingFile) || btn.disabled) return;
+      if ((!msg && !pendingFile) || _sending) return;
 
       // Stop recording if still going
       if (window._recording) stopRecording();
@@ -356,8 +374,7 @@ export async function renderChat(): Promise<string> {
         await new Promise(function(r) { setTimeout(r, 200); });
       }
 
-      btn.disabled = true;
-      btn.style.opacity = "0.5";
+      _sending = true;
       status.textContent = "";
 
       var uploadedFilename = null;
@@ -369,8 +386,7 @@ export async function renderChat(): Promise<string> {
         } catch(e) {
           status.style.color = "var(--red)";
           status.textContent = "Upload failed: " + e.message;
-          btn.disabled = false;
-          btn.style.opacity = "1";
+          _sending = false;
           return;
         }
         clearAttachment();
@@ -385,7 +401,8 @@ export async function renderChat(): Promise<string> {
         : msg;
       optimisticBubble = document.createElement("div");
       optimisticBubble.style.cssText = "display:flex;justify-content:flex-end;margin-bottom:0.75rem";
-      optimisticBubble.innerHTML = '<div style="max-width:75%"><div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem;letter-spacing:0.05em">' + fmt(new Date()) + '</div><div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">' + renderContent(previewContent) + '</div></div>';
+      var obMaxW = uploadedFilename ? "90%" : "75%";
+      optimisticBubble.innerHTML = '<div style="max-width:' + obMaxW + '">'<div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem;letter-spacing:0.05em">' + fmt(new Date()) + '</div><div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">' + renderContent(previewContent) + '</div></div>';
       inner.appendChild(optimisticBubble);
       scrollToBottom();
 
@@ -414,8 +431,7 @@ export async function renderChat(): Promise<string> {
         status.textContent = "Network error \u2014 is the relay running?";
         if (optimisticBubble) { optimisticBubble.remove(); optimisticBubble = null; }
       } finally {
-        btn.disabled = false;
-        btn.style.opacity = "1";
+        _sending = false;
         input.focus();
       }
     };
