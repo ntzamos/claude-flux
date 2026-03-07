@@ -1669,29 +1669,28 @@ async function sendResponse(ctx: Context, response: string, thinkingMsgId?: numb
 
 async function checkStartupStatus(): Promise<string> {
   const lines: string[] = ["Bot started successfully! 🤖"];
-  // Only show dashboard URL if tunneling is enabled
-  try {
-    const tunnelRows = await sql`SELECT value FROM settings WHERE key = 'TUNNEL_ENABLED'`;
-    const tunnelEnabled = tunnelRows[0]?.value === "true";
-    if (tunnelEnabled) {
-      // Try to get the live ngrok URL
-      try {
-        const res = await fetch("http://localhost:4040/api/tunnels");
-        const data = (await res.json()) as { tunnels?: Array<{ proto: string; public_url: string }> };
-        const ngrokUrl = data.tunnels?.find((t) => t.proto === "https")?.public_url;
-        if (ngrokUrl) lines.push(`Dashboard: ${ngrokUrl}`);
-      } catch {
-        // ngrok not ready yet, skip URL
-      }
-    }
-  } catch {
-    if (process.env.WEB_HOST) lines.push(`Dashboard: ${process.env.WEB_HOST}`);
-  }
 
-  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
-  if (railwayDomain) {
-    lines.push("");
-    lines.push("Dashboard: https://" + railwayDomain);
+  // Railway deployment — domain is injected automatically
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    lines.push(`Dashboard: https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+  } else {
+    // Self-hosted: try ngrok tunnel, then WEB_HOST fallback
+    try {
+      const tunnelRows = await sql`SELECT value FROM settings WHERE key = 'TUNNEL_ENABLED'`;
+      const tunnelEnabled = tunnelRows[0]?.value === "true";
+      if (tunnelEnabled) {
+        try {
+          const res = await fetch("http://localhost:4040/api/tunnels");
+          const data = (await res.json()) as { tunnels?: Array<{ proto: string; public_url: string }> };
+          const ngrokUrl = data.tunnels?.find((t) => t.proto === "https")?.public_url;
+          if (ngrokUrl) lines.push(`Dashboard: ${ngrokUrl}`);
+        } catch {
+          // ngrok not ready yet, skip URL
+        }
+      }
+    } catch {
+      if (process.env.WEB_HOST) lines.push(`Dashboard: ${process.env.WEB_HOST}`);
+    }
   }
 
   lines.push("");

@@ -56,6 +56,12 @@ if [ -n "$WHISPER_MODEL" ]; then
     >/dev/null 2>&1 || true
 fi
 
+# Save RAILWAY_PUBLIC_DOMAIN to DB so relay and web dashboard can use it
+if [ -n "$RAILWAY_PUBLIC_DOMAIN" ]; then
+  echo "[init] Railway domain detected: https://$RAILWAY_PUBLIC_DOMAIN"
+  psql "$DATABASE_URL" -c     "INSERT INTO settings (key, value, updated_at) VALUES ('WEB_HOST', 'https://$RAILWAY_PUBLIC_DOMAIN', NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();"     >/dev/null 2>&1 || true
+fi
+
 # Start web dashboard on port 3000 (docker-compose maps this to host port 80)
 echo "[init] Starting web dashboard..."
 cd /app/services/web
