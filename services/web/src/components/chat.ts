@@ -179,7 +179,7 @@ export async function renderChat(): Promise<string> {
           var m = msgs[i];
           // Skip if already rendered
           if (inner.querySelector("[data-id='" + m.id + "']")) continue;
-          inner.insertBefore(makeBubble(m), anchor);
+          inner.appendChild(makeBubble(m));
           if (m.created_at > lastTs) lastTs = m.created_at;
         }
 
@@ -227,7 +227,7 @@ export async function renderChat(): Promise<string> {
       optimisticBubble = document.createElement("div");
       optimisticBubble.style.cssText = "display:flex;justify-content:flex-end;margin-bottom:0.75rem";
       optimisticBubble.innerHTML = '<div style="max-width:72%"><div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem;letter-spacing:0.05em">' + fmt(new Date()) + '</div><div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">' + esc(msg) + '</div></div>';
-      inner.insertBefore(optimisticBubble, anchor);
+      inner.appendChild(optimisticBubble);
       scrollToBottom();
 
       try {
