@@ -39,11 +39,13 @@ export async function renderChat(): Promise<string> {
     const isUser  = m.role === "user";
     const time    = new Date(m.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
     const content = renderContent(m.content);
-    const hasMedia = content.includes("<audio") || content.includes("<img");
+    const hasAudio = content.includes("<audio");
+    const hasMedia = hasAudio || content.includes("<img");
     const maxW  = hasMedia ? "90%" : "75%";
+    const minW  = hasAudio ? "min-width:280px;" : "";
     return isUser
-      ? `<div data-id="${m.id}" style="display:flex;justify-content:flex-end;margin-bottom:0.75rem"><div style="max-width:${maxW}"><div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem;letter-spacing:0.05em">${time}</div><div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">${content}</div></div></div>`
-      : `<div data-id="${m.id}" style="display:flex;justify-content:flex-start;margin-bottom:0.75rem"><div style="max-width:${maxW}"><div style="font-size:0.62rem;color:var(--muted);margin-bottom:0.25rem;letter-spacing:0.05em">Claude &middot; ${time}</div><div style="background:var(--surface2);color:var(--text);padding:0.6rem 0.9rem;border-radius:14px 14px 14px 3px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">${content}</div></div></div>`;
+      ? `<div data-id="${m.id}" style="display:flex;justify-content:flex-end;margin-bottom:0.75rem"><div style="max-width:${maxW};${minW}"><div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem;letter-spacing:0.05em">${time}</div><div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">${content}</div></div></div>`
+      : `<div data-id="${m.id}" style="display:flex;justify-content:flex-start;margin-bottom:0.75rem"><div style="max-width:${maxW};${minW}"><div style="font-size:0.62rem;color:var(--muted);margin-bottom:0.25rem;letter-spacing:0.05em">Claude &middot; ${time}</div><div style="background:var(--surface2);color:var(--text);padding:0.6rem 0.9rem;border-radius:14px 14px 14px 3px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">${content}</div></div></div>`;
   };
 
   const bubbles    = messages.map(makeBubbleHtml).join("");
@@ -167,16 +169,18 @@ export async function renderChat(): Promise<string> {
       var isUser   = m.role === "user";
       var time     = fmt(new Date(m.created_at));
       var content  = renderContent(m.content);
-      var hasMedia = content.indexOf("<audio") >= 0 || content.indexOf("<img") >= 0;
+      var hasAudio = content.indexOf("<audio") >= 0;
+      var hasMedia = hasAudio || content.indexOf("<img") >= 0;
       var maxW     = hasMedia ? "90%" : "75%";
+      var minW     = hasAudio ? "min-width:280px;" : "";
       var div = document.createElement("div");
       div.dataset.id = m.id;
       if (isUser) {
         div.style.cssText = "display:flex;justify-content:flex-end;margin-bottom:0.75rem";
-        div.innerHTML = '<div style="max-width:' + maxW + '"><div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem;letter-spacing:0.05em">' + time + '</div><div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">' + content + '</div></div>';
+        div.innerHTML = '<div style="max-width:' + maxW + ';' + minW + '"><div style="font-size:0.62rem;color:var(--muted);text-align:right;margin-bottom:0.25rem;letter-spacing:0.05em">' + time + '</div><div style="background:var(--accent);color:#030f07;padding:0.6rem 0.9rem;border-radius:14px 14px 3px 14px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">' + content + '</div></div>';
       } else {
         div.style.cssText = "display:flex;justify-content:flex-start;margin-bottom:0.75rem";
-        div.innerHTML = '<div style="max-width:' + maxW + '"><div style="font-size:0.62rem;color:var(--muted);margin-bottom:0.25rem;letter-spacing:0.05em">Claude &middot; ' + time + '</div><div style="background:var(--surface2);color:var(--text);padding:0.6rem 0.9rem;border-radius:14px 14px 14px 3px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">' + content + '</div></div>';
+        div.innerHTML = '<div style="max-width:' + maxW + ';' + minW + '"><div style="font-size:0.62rem;color:var(--muted);margin-bottom:0.25rem;letter-spacing:0.05em">Claude &middot; ' + time + '</div><div style="background:var(--surface2);color:var(--text);padding:0.6rem 0.9rem;border-radius:14px 14px 14px 3px;font-size:0.84rem;line-height:1.5;white-space:pre-wrap">' + content + '</div></div>';
       }
       return div;
     }
