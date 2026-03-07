@@ -414,32 +414,32 @@ export function renderSettingsForm(
     var btn = document.getElementById('hue-setup-btn');
     var status = document.getElementById('hue-setup-status');
     btn.disabled = true;
-    btn.textContent = 'Searching…';
-    status.textContent = 'Press the button on your bridge now if you haven\'t already.';
-    status.style.color = 'var(--muted)';
-    fetch('/api/hue-setup', { method: 'POST' })
+    btn.textContent = "Searching\u2026";
+    status.textContent = "Press the button on your bridge now if you have not already.";
+    status.style.color = "var(--muted)";
+    fetch("/api/hue-setup", { method: "POST" })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (d.ok) {
-          var ip = document.getElementById('HUE_BRIDGE_IP');
-          var key = document.getElementById('HUE_API_KEY');
+          var ip = document.getElementById("HUE_BRIDGE_IP");
+          var key = document.getElementById("HUE_API_KEY");
           if (ip) { ip.value = d.ip; }
-          if (key) { key.value = d.token; key.type = 'text'; }
-          btn.textContent = '✓ Done';
-          status.textContent = 'Bridge found at ' + d.ip + '. Click Save All Settings to save.';
-          status.style.color = 'var(--accent)';
+          if (key) { key.value = d.token; key.type = "text"; }
+          btn.textContent = "\u2713 Done";
+          status.textContent = "Bridge found at " + d.ip + ". Click Save All Settings to save.";
+          status.style.color = "var(--accent)";
         } else {
           btn.disabled = false;
-          btn.textContent = 'Discover & Setup';
-          status.textContent = d.error || 'Setup failed.';
-          status.style.color = '#ff5252';
+          btn.textContent = "Discover & Setup";
+          status.textContent = d.error || "Setup failed.";
+          status.style.color = "#ff5252";
         }
       })
       .catch(function(e) {
         btn.disabled = false;
-        btn.textContent = 'Discover & Setup';
-        status.textContent = 'Request failed: ' + e.message;
-        status.style.color = '#ff5252';
+        btn.textContent = "Discover & Setup";
+        status.textContent = "Request failed: " + e.message;
+        status.style.color = "#ff5252";
       });
   }
 
