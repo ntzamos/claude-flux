@@ -48,6 +48,7 @@ Claude Flux turns Telegram into a fully capable AI assistant — one that rememb
 | 🛡️ **Human-in-the-loop** | Claude asks before taking actions on your behalf |
 | 🎤 **Voice** | Transcribed locally via whisper.cpp, replies via ElevenLabs (optional) |
 | 🖥️ **Dashboard** | Web UI to manage chat, memory, tasks, files, and settings |
+| 💡 **Philips Hue** | Control your lights by chat — toggle rooms, set brightness, auto-discover bridge |
 | 🔧 **Self-modifying** | Claude can edit its own source and push to your GitHub fork |
 
 ---
@@ -94,6 +95,7 @@ Everything else (ElevenLabs, OpenAI for embeddings, GitHub token) is optional an
 - **Memory** — everything the bot has remembered about you
 - **Files** — files Claude has generated (download or delete)
 - **Settings** — update any API key live (relay restarts automatically)
+- **Hue** — control Philips Hue lights and rooms directly from the dashboard
 
 ---
 

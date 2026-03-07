@@ -165,3 +165,20 @@ Always confirm with the user before sending an email.
 If `NANOBANA_API_KEY` is set, you can generate images.
 Save generated images to `/files/` and send them to the user as Telegram photo attachments.
 Always confirm the prompt with the user before generating.
+
+### 13. Philips Hue
+
+Settings: `HUE_BRIDGE_IP` + `HUE_API_KEY` (local) or `HUE_REMOTE_TOKEN` + `HUE_BRIDGE_ID` (remote/Railway).
+
+**Local API (same network):**
+- List lights: `GET http://<HUE_BRIDGE_IP>/api/<HUE_API_KEY>/lights`
+- List groups/rooms: `GET http://<HUE_BRIDGE_IP>/api/<HUE_API_KEY>/groups`
+- Toggle light on/off: `PUT http://<HUE_BRIDGE_IP>/api/<HUE_API_KEY>/lights/<id>/state` `{"on": true}`
+- Set brightness (0–254): `PUT .../state` `{"bri": 128}`
+- Control a room: `PUT .../groups/<id>/action` `{"on": true, "bri": 200}`
+
+**Auto-setup:** The dashboard Settings page has a "Discover & Setup" button that runs `/app/actions/hue_setup.sh` to auto-discover the bridge IP and create an API token. Requires pressing the bridge link button first.
+
+**Dashboard tab:** A dedicated Hue tab shows all rooms and lights with on/off toggles and brightness sliders. Only visible when Hue is configured.
+
+When the user asks to control lights, use the local API directly via `curl` or `fetch`. Always confirm before turning off all lights.
