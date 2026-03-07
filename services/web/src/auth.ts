@@ -1,5 +1,18 @@
 import { getSettings, isOnboarded } from "./db.ts";
 
+// ── Local access detection ────────────────────────────────────
+// Returns true when running locally with no public tunnel — auth can be skipped.
+export async function isLocalAccess(): Promise<boolean> {
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) return false; // cloud deployment
+  try {
+    const settings = await getSettings();
+    const tunnelEnabled = settings.TUNNEL_ENABLED;
+    const ngrokToken = settings.NGROK_AUTH_TOKEN?.trim();
+    if (tunnelEnabled !== "false" && ngrokToken) return false; // active tunnel
+  } catch {}
+  return true;
+}
+
 // ── Session store ─────────────────────────────────────────────
 const sessions = new Map<string, number>(); // token → expiresAt
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -50,6 +63,7 @@ export function clearSession(req: Request): string {
 
 export async function requireAuth(req: Request): Promise<Response | null> {
   if (isAuthenticated(req)) return null;
+  if (await isLocalAccess()) return null;
   const onboarded = await isOnboarded().catch(() => false);
   if (!onboarded) return new Response(null, { status: 302, headers: { Location: "/onboarding" } });
   return new Response(null, { status: 302, headers: { Location: "/login" } });

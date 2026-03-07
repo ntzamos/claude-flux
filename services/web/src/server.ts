@@ -32,7 +32,7 @@ import { renderLoginPage } from "./pages/login.ts";
 import {
   isAuthenticated, requireAuth, createSession, clearSession,
   sendOtpViaTelegram, generateOtp, setOtp, clearOtp, getSessionToken,
-  otpState, OTP_COOLDOWN,
+  otpState, OTP_COOLDOWN, isLocalAccess,
 } from "./auth.ts";
 
 // ── Tunnel startup ────────────────────────────────────────────
@@ -260,7 +260,7 @@ const server = Bun.serve({
       try {
         const onboarded = await isOnboarded();
         if (!onboarded) return redirect("/onboarding");
-        if (!isAuthenticated(req)) return redirect("/login");
+        if (!isAuthenticated(req) && !(await isLocalAccess())) return redirect("/login");
         return redirect("/dashboard");
       } catch {
         return redirect("/onboarding");
@@ -269,7 +269,7 @@ const server = Bun.serve({
 
     // ── Login page ───────────────────────────────────────────
     if (pathname === "/login" && req.method === "GET") {
-      if (isAuthenticated(req)) return redirect("/dashboard");
+      if (isAuthenticated(req) || await isLocalAccess()) return redirect("/dashboard");
       const sent  = url.searchParams.get("sent") === "1";
       const error = url.searchParams.get("error") ?? undefined;
       let cooldownSecs: number | undefined;
