@@ -289,7 +289,12 @@ async function renderStatus(): Promise<string> {
       var loc = document.getElementById("location-input").value.trim();
       fetch("/api/widgets/weather", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: loc }) })
         .then(function(r) { return r.json(); }).then(function(d) {
-          if (d.ok) { document.getElementById("weather-edit-panel").style.display = "none"; loadWidgets(); }
+          if (d.ok) {
+            document.getElementById("weather-edit-panel").style.display = "none";
+            document.getElementById("weather-body").innerHTML = "<div style=\\"color:var(--muted);font-size:0.85rem;\\">Loading...</div>";
+            document.getElementById("weather-location").textContent = loc ? "· " + loc : "";
+            loadWidgets();
+          }
         });
     };
 
@@ -352,7 +357,12 @@ async function renderStatus(): Promise<string> {
     window.saveMarketSymbols = function() {
       fetch("/api/widgets/markets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbols: pendingSymbols }) })
         .then(function(r) { return r.json(); }).then(function(d) {
-          if (d.ok) { document.getElementById("market-edit-panel").style.display = "none"; loadWidgets(); }
+          if (d.ok) {
+            document.getElementById("market-edit-panel").style.display = "none";
+            document.getElementById("market-body").innerHTML = "<div style=\\"color:var(--muted);font-size:0.85rem;\\">Loading...</div>";
+            document.getElementById("market-updated").textContent = "";
+            loadWidgets();
+          }
         });
     };
   })();
