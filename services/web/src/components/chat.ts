@@ -188,16 +188,19 @@ export async function renderChat(page = 1): Promise<string> {
     }, 1000);
   }
 
-  // Scroll to bottom on load — defer one frame so layout is complete
-  requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
+  // Scroll to bottom on load — defer to allow layout to complete
+  function scrollToBottom() { list.scrollTop = list.scrollHeight; }
+  requestAnimationFrame(() => { scrollToBottom(); setTimeout(scrollToBottom, 150); });
 
   async function sendChatMsg() {
     const input  = document.getElementById('chat-input');
     const btn    = document.getElementById('chat-send-btn');
     const status = document.getElementById('chat-status');
     const msg    = input.value.trim();
-    if (!msg) return;
+    if (!msg || btn.disabled) return;
 
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
     input.value = '';
     input.style.height = 'auto';
     status.textContent = '';
@@ -231,6 +234,8 @@ export async function renderChat(page = 1): Promise<string> {
       status.textContent = 'Network error — is the relay running?';
       if (optimisticBubble) { optimisticBubble.remove(); optimisticBubble = null; }
     } finally {
+      btn.disabled = false;
+      btn.style.opacity = '1';
       input.focus();
     }
   }
