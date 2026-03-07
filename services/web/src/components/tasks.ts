@@ -36,7 +36,9 @@ export async function renderTasks(): Promise<string> {
       ? `<span class="badge badge-green">active</span>`
       : t.status === "done"
         ? `<span class="badge badge-gray">done</span>`
-        : `<span class="badge badge-red">cancelled</span>`;
+        : t.status === "running"
+          ? `<span class="badge badge-yellow">running</span>`
+          : `<span class="badge badge-red">cancelled</span>`;
 
     const typeLabel = t.schedule_type === "interval"
       ? `every ${t.interval_minutes}min`
@@ -206,7 +208,7 @@ export async function renderTasks(): Promise<string> {
       ? 'Interval (every ' + t.interval_minutes + ' min)'
       : t.schedule_type.charAt(0).toUpperCase() + t.schedule_type.slice(1);
 
-    const statusColor = t.status === 'active' ? 'var(--accent)' : t.status === 'done' ? 'var(--muted)' : '#ff7070';
+    const statusColor = t.status === 'active' ? 'var(--accent)' : t.status === 'done' ? 'var(--muted)' : t.status === 'running' ? '#ffb300' : '#ff7070';
 
     document.getElementById('detail-title').textContent = esc(t.description);
     document.getElementById('detail-body').innerHTML = \`

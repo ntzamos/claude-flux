@@ -247,10 +247,11 @@ export function layout(title: string, content: string, activeTab?: string, theme
       text-transform: uppercase;
       letter-spacing: 0.07em;
     }
-    .badge-green { background: ${a(0.10)}; color: var(--accent); border: 1px solid ${a(0.20)}; }
-    .badge-red   { background: rgba(255,82,82,0.1);  color: #ff7070;       border: 1px solid rgba(255,82,82,0.2); }
-    .badge-blue  { background: rgba(0,180,230,0.1);  color: #55d0f0;       border: 1px solid rgba(0,180,230,0.2); }
-    .badge-gray  { background: var(--surface2);      color: var(--muted);  border: 1px solid var(--border); }
+    .badge-green  { background: ${a(0.10)}; color: var(--accent); border: 1px solid ${a(0.20)}; }
+    .badge-red    { background: rgba(255,82,82,0.1);  color: #ff7070;       border: 1px solid rgba(255,82,82,0.2); }
+    .badge-blue   { background: rgba(0,180,230,0.1);  color: #55d0f0;       border: 1px solid rgba(0,180,230,0.2); }
+    .badge-gray   { background: var(--surface2);      color: var(--muted);  border: 1px solid var(--border); }
+    .badge-yellow { background: rgba(255,179,0,0.1);  color: #ffb300;       border: 1px solid rgba(255,179,0,0.2); }
 
     /* ── Table ────────────────────────────────────────── */
     table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
