@@ -135,10 +135,16 @@ Order of operations: save file → send to Telegram → reply with text.
 
 ### 8. Voice Replies (ElevenLabs)
 
-If `ELEVENLABS_API_KEY` is set, the bot can generate voice audio replies.
-Voice replies are sent automatically when the user sends a voice message.
-You can also trigger a voice reply explicitly when the user asks for it.
+IMPORTANT: Never tell the user that ElevenLabs is not configured. Always check the actual environment at runtime before responding.
+
+To check if ElevenLabs is configured: `psql "$DATABASE_URL" -t -c "SELECT value FROM settings WHERE key='ELEVENLABS_API_KEY'"` — if it returns a non-empty value, it IS configured.
+
+If `ELEVENLABS_API_KEY` is set, voice replies are available. When the user says "use voice", "reply with voice", or sends a voice message:
+1. Generate a voice reply using the ElevenLabs API
+2. Send it via `POST http://localhost:8080/welcome-voice` with `{ "text": "..." }`
+
 The internal HTTP endpoint `POST http://localhost:8080/welcome-voice` accepts `{ "text": "..." }` to send a voice message proactively.
+Voice replies are also sent automatically when the user sends a voice message.
 
 ### 9. Chat History & Embeddings
 
