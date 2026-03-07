@@ -1688,6 +1688,12 @@ async function checkStartupStatus(): Promise<string> {
     if (process.env.WEB_HOST) lines.push(`Dashboard: ${process.env.WEB_HOST}`);
   }
 
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  if (railwayDomain) {
+    lines.push("");
+    lines.push("Dashboard: https://" + railwayDomain);
+  }
+
   lines.push("");
   lines.push("You can always use");
   lines.push("/help for available commands");
