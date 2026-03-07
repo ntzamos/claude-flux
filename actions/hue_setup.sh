@@ -28,7 +28,7 @@ if [ -z "$BRIDGE_IP" ]; then
     local prefix=$1
     for i in $(seq 1 254); do
       [ -s "$FOUND" ] && return
-      RESP=$(curl -sf --max-time 1 "http://${prefix}.${i}/api/" 2>/dev/null || true)
+      RESP=$(curl -sf --max-time 0.1 "http://${prefix}.${i}/api/" 2>/dev/null || true)
       if echo "$RESP" | grep -q "Hue\|hue\|lights\|groups\|not available for resource" 2>/dev/null; then
         echo "${prefix}.${i}" > "$FOUND"
         return
