@@ -564,12 +564,13 @@ const server = Bun.serve({
           return json({ data });
         }
         if (before !== null) {
-          // Infinite scroll up: fetch messages before a given id, return in asc order
+          // Infinite scroll up: fetch messages older than a given timestamp
+          const beforeDate = new Date(before);
           const rows = await sql`
             SELECT id, created_at, role, content, channel
             FROM messages
-            WHERE id < ${parseInt(before, 10)}
-            ORDER BY id DESC
+            WHERE created_at < ${beforeDate}
+            ORDER BY created_at DESC
             LIMIT ${limit}
           `;
           return json({ data: rows.reverse() });
@@ -578,7 +579,7 @@ const server = Bun.serve({
         const rows = await sql`
           SELECT id, created_at, role, content, channel
           FROM messages
-          ORDER BY id DESC
+          ORDER BY created_at DESC
           LIMIT ${limit}
         `;
         return json({ data: rows.reverse() });

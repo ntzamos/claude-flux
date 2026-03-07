@@ -20,7 +20,7 @@ export async function renderChat(): Promise<string> {
     ? new Date(messages[messages.length - 1].created_at).toISOString()
     : new Date(0).toISOString();
 
-  const oldestId = messages.length > 0 ? messages[0].id : null;
+  const oldestTs = messages.length > 0 ? new Date(messages[0].created_at).toISOString() : null;
 
   const esc = (s: string) => s.replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const renderContent = (s: string) => esc(s).replace(/\[FILE:\s*([^\]]+)\]/gi, (_, fn) => {
@@ -90,7 +90,7 @@ export async function renderChat(): Promise<string> {
     var spinner = document.getElementById("load-more-spinner");
 
     var lastTs      = ${JSON.stringify(lastTs)};
-    var oldestId    = ${JSON.stringify(oldestId)};
+    var oldestTs    = ${JSON.stringify(oldestTs)};
     var loadingMore = false;
     var noMoreOlder = ${messages.length < INIT_SIZE ? "true" : "false"};
     var optimisticBubble = null;
@@ -126,7 +126,7 @@ export async function renderChat(): Promise<string> {
 
     // ── Infinite scroll upward ─────────────────────────────────
     list.addEventListener("scroll", function() {
-      if (list.scrollTop < 80 && !loadingMore && !noMoreOlder && oldestId !== null) {
+      if (list.scrollTop < 80 && !loadingMore && !noMoreOlder && oldestTs !== null) {
         loadOlder();
       }
     });
@@ -135,7 +135,7 @@ export async function renderChat(): Promise<string> {
       loadingMore = true;
       spinner.style.display = "block";
       try {
-        var res = await fetch("/api/messages?before=" + oldestId + "&limit=20");
+        var res = await fetch("/api/messages?before=" + encodeURIComponent(oldestTs) + "&limit=20");
         if (res.status === 401) { window.location.href = "/login"; return; }
         var data = await res.json();
         var msgs = data.data || [];
@@ -151,8 +151,8 @@ export async function renderChat(): Promise<string> {
           for (var i = 0; i < msgs.length; i++) frag.appendChild(makeBubble(msgs[i]));
           inner.insertBefore(frag, inner.firstChild);
 
-          // Update oldest id
-          oldestId = msgs[0].id;
+          // Update oldest timestamp cursor
+          oldestTs = new Date(msgs[0].created_at).toISOString();
 
           // Restore scroll position so view doesn't jump
           list.scrollTop = list.scrollHeight - prevHeight;
