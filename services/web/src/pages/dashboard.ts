@@ -60,10 +60,12 @@ async function renderStatus(): Promise<string> {
     );
   const hasVoice = !!whisperModel;
 
-  function statusRow(label: string, ok: boolean, detail: string) {
-    const badge = ok
+  function statusRow(label: string, ok: boolean, detail: string, state: "ok" | "error" | "info" = ok ? "ok" : "error") {
+    const badge = state === "ok"
       ? `<span class="badge badge-green">ok</span>`
-      : `<span class="badge badge-red">not set</span>`;
+      : state === "info"
+        ? `<span class="badge badge-gray">off</span>`
+        : `<span class="badge badge-red">not set</span>`;
     return `
     <tr>
       <td style="color:var(--muted)">${label}</td>
@@ -99,7 +101,7 @@ async function renderStatus(): Promise<string> {
             ${statusRow("Voice transcription", hasVoice,      hasVoice      ? whisperModel : "no model found")}
             ${statusRow("Voice replies",       hasVoiceReply, hasVoiceReply ? "ElevenLabs configured" : "optional — go to Settings")}
             ${statusRow("Semantic memory",     hasMemory,     hasMemory     ? "OpenAI embeddings configured" : "optional — go to Settings")}
-            ${statusRow("Public URL",           hasNgrok,      hasNgrok      ? `<a href="${tunnelUrl}" target="_blank" style="color:var(--accent)">${tunnelUrl}</a>` : isRailway ? "Railway domain not found" : ngrokDomainSet ? "ngrok domain set but tunnel not active" : "tunneling not enabled — configure ngrok in Settings")}
+            ${statusRow("Public URL", hasNgrok, hasNgrok ? `<a href="${tunnelUrl}" target="_blank" style="color:var(--accent)">${tunnelUrl}</a>` : isRailway ? "Railway domain not found" : ngrokDomainSet ? "ngrok domain set but tunnel not active" : "not enabled — configure ngrok in Settings to access remotely", hasNgrok ? "ok" : isRailway || ngrokDomainSet ? "error" : "info")}
             ${statusRow("User name",           hasName,       hasName       ? settings.USER_NAME : "optional")}
           </tbody>
         </table>

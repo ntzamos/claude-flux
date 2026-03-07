@@ -8,7 +8,7 @@ export async function renderChat(): Promise<string> {
     const rows = await sql`
       SELECT id, created_at, role, content, channel
       FROM messages
-      ORDER BY id DESC
+      ORDER BY created_at DESC
       LIMIT ${INIT_SIZE}
     `;
     messages = rows.reverse(); // oldest → newest (newest at bottom)
