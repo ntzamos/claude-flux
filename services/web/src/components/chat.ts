@@ -139,21 +139,24 @@ export async function renderChat(): Promise<string> {
         if (res.status === 401) { window.location.href = "/login"; return; }
         var data = await res.json();
         var msgs = data.data || [];
-        if (msgs.length === 0) { noMoreOlder = true; spinner.style.display = "none"; return; }
-        if (msgs.length < 20) noMoreOlder = true;
+        if (msgs.length === 0) {
+          noMoreOlder = true;
+        } else {
+          if (msgs.length < 20) noMoreOlder = true;
 
-        // Save scroll position before prepending
-        var prevHeight = list.scrollHeight;
+          // Save scroll position before prepending
+          var prevHeight = list.scrollHeight;
 
-        var frag = document.createDocumentFragment();
-        for (var i = 0; i < msgs.length; i++) frag.appendChild(makeBubble(msgs[i]));
-        inner.insertBefore(frag, inner.firstChild);
+          var frag = document.createDocumentFragment();
+          for (var i = 0; i < msgs.length; i++) frag.appendChild(makeBubble(msgs[i]));
+          inner.insertBefore(frag, inner.firstChild);
 
-        // Update oldest id
-        oldestId = msgs[0].id;
+          // Update oldest id
+          oldestId = msgs[0].id;
 
-        // Restore scroll position so view doesn't jump
-        list.scrollTop = list.scrollHeight - prevHeight;
+          // Restore scroll position so view doesn't jump
+          list.scrollTop = list.scrollHeight - prevHeight;
+        }
       } catch(e) {}
       spinner.style.display = "none";
       loadingMore = false;
