@@ -32,9 +32,11 @@ async function renderStatus(): Promise<string> {
   const hasName        = !!settings.USER_NAME;
   const hasVoiceReply  = !!settings.ELEVENLABS_API_KEY;
   const hasMemory      = !!settings.OPENAI_API_KEY;
-  // Resolve live tunnel URL from ngrok (custom domain or live agent API)
+  // Resolve public URL: Railway > ngrok custom domain > ngrok agent
   let tunnelUrl = "";
-  if (settings.NGROK_DOMAIN?.trim()) {
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    tunnelUrl = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+  } else if (settings.NGROK_DOMAIN?.trim()) {
     tunnelUrl = `https://${settings.NGROK_DOMAIN.trim().replace(/^https?:\/\//, "")}`;
   } else {
     try {
