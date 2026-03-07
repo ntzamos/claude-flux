@@ -547,12 +547,12 @@ const server = Bun.serve({
     // ── Messages ─────────────────────────────────────────────
 
     if (pathname === "/api/messages") {
-      const page = parseInt(url.searchParams.get("page") ?? "1", 10);
-      const since = url.searchParams.get("since");
-      const size = 50;
-      const offset = (page - 1) * size;
+      const since  = url.searchParams.get("since");
+      const before = url.searchParams.get("before"); // id-based, for infinite scroll up
+      const limit  = Math.min(parseInt(url.searchParams.get("limit") ?? "20", 10), 100);
       try {
         if (since !== null) {
+          // Polling: fetch messages newer than timestamp, return in asc order
           const sinceDate = new Date(since);
           const data = await sql`
             SELECT id, created_at, role, content, channel
@@ -561,18 +561,27 @@ const server = Bun.serve({
             ORDER BY created_at ASC
             LIMIT 100
           `;
-          return json({ data, total: data.length, page: 1 });
+          return json({ data });
         }
-        const [data, countResult] = await Promise.all([
-          sql`
+        if (before !== null) {
+          // Infinite scroll up: fetch messages before a given id, return in asc order
+          const rows = await sql`
             SELECT id, created_at, role, content, channel
             FROM messages
-            ORDER BY created_at DESC
-            LIMIT ${size} OFFSET ${offset}
-          `,
-          sql`SELECT COUNT(*)::int AS count FROM messages`,
-        ]);
-        return json({ data, total: countResult[0].count, page });
+            WHERE id < ${parseInt(before, 10)}
+            ORDER BY id DESC
+            LIMIT ${limit}
+          `;
+          return json({ data: rows.reverse() });
+        }
+        // Initial load: last N messages in asc order (newest at bottom)
+        const rows = await sql`
+          SELECT id, created_at, role, content, channel
+          FROM messages
+          ORDER BY id DESC
+          LIMIT ${limit}
+        `;
+        return json({ data: rows.reverse() });
       } catch (err: any) {
         return json({ error: err.message }, 500);
       }

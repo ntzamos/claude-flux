@@ -136,7 +136,7 @@ export async function renderDashboard(
       tabContent = await renderTasks();
       break;
     case "chat":
-      tabContent = await renderChat(page);
+      tabContent = await renderChat();
       break;
     case "memory":
       tabContent = await renderMemory();
