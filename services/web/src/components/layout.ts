@@ -407,6 +407,11 @@ export function layout(title: string, content: string, activeTab?: string, theme
   <div class="topbar">
     <div class="topbar-dot"></div>
     <div class="topbar-logo">Claude <span>Flux</span></div>
+    <form method="POST" action="/api/auth/logout" style="margin-left:auto">
+      <button type="submit" title="Sign out" style="background:none;border:none;cursor:pointer;padding:0.25rem 0.5rem;color:var(--muted);font-size:0.72rem;display:flex;align-items:center;gap:0.3rem;">
+        <i data-lucide="log-out" style="width:14px;height:14px"></i>
+      </button>
+    </form>
   </div>
   ${activeTab ? `<nav class="tabnav">${navLinks}</nav>` : ""}
   <div class="main">

@@ -28,6 +28,12 @@ import { spawn } from "bun";
 import { sql, isOnboarded, getSettings, embedContent } from "./db.ts";
 import { renderOnboarding } from "./pages/onboarding.ts";
 import { renderDashboard } from "./pages/dashboard.ts";
+import { renderLoginPage } from "./pages/login.ts";
+import {
+  isAuthenticated, requireAuth, createSession, clearSession,
+  sendOtpViaTelegram, generateOtp, setOtp, clearOtp, getSessionToken,
+  otpState, OTP_COOLDOWN,
+} from "./auth.ts";
 
 // ── Tunnel startup ────────────────────────────────────────────
 // Starts ngrok if the user has configured an auth token and public networking is enabled.
@@ -253,10 +259,65 @@ const server = Bun.serve({
       saveWebHost(req);
       try {
         const onboarded = await isOnboarded();
-        return redirect(onboarded ? "/dashboard" : "/onboarding");
+        if (!onboarded) return redirect("/onboarding");
+        if (!isAuthenticated(req)) return redirect("/login");
+        return redirect("/dashboard");
       } catch {
         return redirect("/onboarding");
       }
+    }
+
+    // ── Login page ───────────────────────────────────────────
+    if (pathname === "/login" && req.method === "GET") {
+      if (isAuthenticated(req)) return redirect("/dashboard");
+      const sent  = url.searchParams.get("sent") === "1";
+      const error = url.searchParams.get("error") ?? undefined;
+      let cooldownSecs: number | undefined;
+      if (otpState) {
+        const rem = Math.ceil((otpState.sentAt + OTP_COOLDOWN - Date.now()) / 1000);
+        if (rem > 0) cooldownSecs = rem;
+      }
+      return html(renderLoginPage({ sent, error, cooldownSecs }));
+    }
+
+    // ── Request OTP ──────────────────────────────────────────
+    if (pathname === "/api/auth/request-otp" && req.method === "POST") {
+      const onboarded = await isOnboarded().catch(() => false);
+      if (!onboarded) return redirect("/onboarding");
+      if (otpState && Date.now() - otpState.sentAt < OTP_COOLDOWN) {
+        const rem = Math.ceil((otpState.sentAt + OTP_COOLDOWN - Date.now()) / 1000);
+        return redirect("/login?sent=1&error=" + encodeURIComponent("Please wait " + rem + "s before requesting a new code."));
+      }
+      const code = generateOtp();
+      setOtp(code);
+      const ok = await sendOtpViaTelegram(code).catch(() => false);
+      if (!ok) {
+        clearOtp();
+        return redirect("/login?error=" + encodeURIComponent("Could not send Telegram message. Check bot token and user ID in Settings."));
+      }
+      return redirect("/login?sent=1");
+    }
+
+    // ── Verify OTP ───────────────────────────────────────────
+    if (pathname === "/api/auth/verify-otp" && req.method === "POST") {
+      const form    = await req.formData();
+      const entered = (form.get("otp") as string)?.trim();
+      if (!otpState || Date.now() > otpState.expiresAt) {
+        clearOtp();
+        return redirect("/login?error=" + encodeURIComponent("Code expired. Request a new one."));
+      }
+      if (entered !== otpState.code) {
+        return redirect("/login?sent=1&error=" + encodeURIComponent("Invalid code. Try again."));
+      }
+      clearOtp();
+      const { cookie } = createSession();
+      return new Response(null, { status: 302, headers: { Location: "/dashboard", "Set-Cookie": cookie } });
+    }
+
+    // ── Logout ───────────────────────────────────────────────
+    if (pathname === "/api/auth/logout" && req.method === "POST") {
+      const clearCookie = clearSession(req);
+      return new Response(null, { status: 302, headers: { Location: "/login", "Set-Cookie": clearCookie } });
     }
 
     // ── Onboarding wizard ───────────────────────────────────
@@ -304,6 +365,15 @@ const server = Bun.serve({
         return redirect(`/onboarding?step=${form.get("_step")}&toast=error&msg=${encodeURIComponent("Save failed: " + error)}`);
       }
       return redirect(`/onboarding?step=${next}`);
+    }
+
+    // ── Auth guard ───────────────────────────────────────────
+    {
+      const PUBLIC = ["/onboarding", "/api/onboarding-step", "/api/test-telegram"];
+      if (!PUBLIC.includes(pathname)) {
+        const authResp = await requireAuth(req);
+        if (authResp) return authResp;
+      }
     }
 
     // ── Dashboard ────────────────────────────────────────────
