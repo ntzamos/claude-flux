@@ -32,7 +32,7 @@ if [ -z "$BRIDGE_IP" ]; then
     for i in $(seq 1 254); do
       IP="${SUBNET}${i}"
       RESP=$(curl -sf --max-time 1 "http://${IP}/api/" 2>/dev/null || true)
-      if echo "$RESP" | grep -q "Hue\|hue\|lights\|groups" 2>/dev/null; then
+      if echo "$RESP" | grep -q "Hue\|hue\|lights\|groups\|not available for resource" 2>/dev/null; then
         BRIDGE_IP="$IP"
         break
       fi
