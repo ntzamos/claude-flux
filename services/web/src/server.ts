@@ -372,7 +372,13 @@ const server = Bun.serve({
       const PUBLIC = ["/onboarding", "/api/onboarding-step", "/api/test-telegram"];
       if (!PUBLIC.includes(pathname)) {
         const authResp = await requireAuth(req);
-        if (authResp) return authResp;
+        if (authResp) {
+          // Return JSON 401 for API routes so fetch() callers can handle it
+          if (pathname.startsWith("/api/")) {
+            return json({ error: "session_expired", redirect: "/login" }, 401);
+          }
+          return authResp;
+        }
       }
     }
 

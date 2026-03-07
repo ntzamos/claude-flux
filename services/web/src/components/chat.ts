@@ -145,6 +145,7 @@ export async function renderChat(page = 1): Promise<string> {
   async function pollMessages() {
     try {
       const res = await fetch('/api/messages?since=' + encodeURIComponent(lastMsgTime));
+      if (res.status === 401) { window.location.href = '/login'; return; }
       const data = await res.json();
       if (data.data && data.data.length > 0) {
         const wasAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
@@ -218,6 +219,7 @@ export async function renderChat(page = 1): Promise<string> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg }),
       });
+      if (res.status === 401) { window.location.href = '/login'; return; }
       if (res.ok) {
         status.style.color = 'var(--muted)';
         status.textContent = 'Claude is thinking…';
