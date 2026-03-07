@@ -6,7 +6,7 @@
 
 ## 🚀 One-Click Deploy
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/MA_g2R?referralCode=mlspxp&utm_medium=integration&utm_source=template&utm_campaign=generic)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/claude-flux?referralCode=mlspxp&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
 A self-hosted AI assistant on Telegram, powered by Claude Code CLI.
 Runs entirely on your machine via Docker — no cloud accounts except API keys.
