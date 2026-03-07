@@ -1,185 +1,91 @@
 # Claude Flux
 
+<div align="center">
+
 ![Claude Flux](https://i.ibb.co/3mDdYzDn/claude-flux.jpg)
 
-**[🌐 Landing page](https://ntzamos.github.io/claude-flux)**
+**Your personal AI on Telegram — powered by Claude, running on your own machine.**
 
-## 🚀 One-Click Deploy
+[![Stars](https://img.shields.io/github/stars/ntzamos/claude-flux?style=flat-square&color=yellow)](https://github.com/ntzamos/claude-flux/stargazers)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com)
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/claude-flux?referralCode=mlspxp&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
-A self-hosted AI assistant on Telegram, powered by Claude Code CLI.
-Runs entirely on your machine via Docker — no cloud accounts except API keys.
+</div>
+
+---
+
+<!-- Add a GIF here showing the bot in action: chat, voice message, scheduled task, file generation -->
+
+Claude Flux turns Telegram into a fully capable AI assistant — one that remembers you, schedules tasks, generates files, and can even modify its own code. Two Docker containers. Five minutes to set up.
+
+---
+
+## What You Get
+
+| | |
+|---|---|
+| 💬 **Chat** | Send text, photos, voice, or documents — Claude handles all of it |
+| 🧠 **Memory** | Remembers facts, tracks goals, surfaces relevant context automatically |
+| ⏰ **Scheduler** | "Remind me every morning at 8" — it just works |
+| 🛡️ **Human-in-the-loop** | Claude asks before taking actions on your behalf |
+| 🎤 **Voice** | Transcribed locally via whisper.cpp, replies via ElevenLabs (optional) |
+| 🖥️ **Dashboard** | Web UI to manage chat, memory, tasks, files, and settings |
+| 🔧 **Self-modifying** | Claude can edit its own source and push to your GitHub fork |
+
+---
+
+## Get Started in 5 Minutes
+
+**Option 1 — One-click on Railway:**
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/claude-flux?referralCode=mlspxp&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
+**Option 2 — Run locally with Docker:**
 
 ```bash
+git clone https://github.com/ntzamos/claude-flux
+cd claude-flux
+cp .env.example .env      # set POSTGRES_PASSWORD to anything
 docker compose up -d
-open http://localhost
+open http://localhost      # complete setup in < 5 min
 ```
 
----
+The onboarding wizard at `http://localhost` walks you through connecting Telegram and Claude. That's it — your bot is live.
 
-## ⭐ Star History
-
-If Claude Flux helps you, consider giving it a star to support the project!
-
-[![Star History Chart](https://api.star-history.com/svg?repos=ntzamos/claude-flux&type=Date)](https://star-history.com/#ntzamos/claude-flux&Date)
-
----
-
-## What It Does
-
-- **Chat with Claude on Telegram** — send messages, photos, voice, documents
-- **Persistent memory** — remembers facts, tracks goals, finds relevant context
-- **Scheduled tasks** — ask the bot to remind you of anything, at any interval
-- **Human-in-the-loop** — Claude asks before taking actions on your behalf
-- **Voice messages** — transcribed locally via whisper.cpp (auto-downloaded on first run)
-- **Voice replies** — responds with speech via ElevenLabs (optional)
-- **Web dashboard** — manage settings, view chat history, memory, tasks, and generated files
+> **Want Claude to push code to your repo?** Fork first, then clone your fork. The bot can modify its own code and push updates — but only if it has write access, which requires your own fork.
 
 ---
 
 ## Requirements
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker + Compose)
-- An [Anthropic API key](https://console.anthropic.com/) (Claude)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- An [Anthropic API key](https://console.anthropic.com/)
 - A Telegram bot token (from [@BotFather](https://t.me/botfather))
 
-That's it. Everything else is optional.
-
----
-
-## Quick Start
-
-```bash
-git clone https://github.com/ntzamos/claude-flux
-cd claude-flux
-
-cp .env.example .env          # set POSTGRES_PASSWORD
-docker compose up -d          # starts 2 containers
-open http://localhost          # complete onboarding (< 5 min)
-```
-
-The onboarding wizard walks you through connecting Telegram and Claude.
-Once done, your bot is live and the dashboard is ready.
-
-> **Want your bot to upgrade itself?** Fork the repo first, then clone your fork.
-> The bot can modify its own code and push updates back to your GitHub — but only if it has write access to the repo.
-> A fork gives you a personal copy you control.
-
----
-
-## Services
-
-| Service | What it does | Port |
-|---------|-------------|------|
-| **bot** | Telegram relay + web dashboard (Claude-powered) | 80 (http://localhost) |
-| **db** | PostgreSQL 16 + pgvector | — |
-
-Two containers. That's the whole stack.
+Everything else (ElevenLabs, OpenAI for embeddings, GitHub token) is optional and added through the dashboard.
 
 ---
 
 ## Dashboard
 
-`http://localhost` gives you:
+`http://localhost` gives you a full control panel:
 
-- **Status** — bot health, last message time, active task count
-- **Tasks** — scheduled reminders and recurring actions (add, pause, delete)
-- **Chat** — send messages and view full conversation history
-- **Memory** — facts, goals, and preferences the bot has stored (add, edit, delete)
-- **Files** — files generated by Claude (open, download, delete)
-- **Settings** — update any API key or preference live (relay restarts automatically)
-
----
-
-## Project Structure
-
-```
-docker-compose.yml          ← orchestrates db + bot
-.env.example                ← copy to .env, set POSTGRES_PASSWORD
-migrations/                 ← SQL applied automatically on first boot
-config/profile.md           ← your personal profile (optional, loaded every message)
-whisper-models/             ← whisper .bin model (auto-downloaded on first run)
-services/
-  relay/                    ← Telegram bot
-    src/relay.ts            ← main bot logic
-    src/memory.ts           ← memory system
-    src/scheduler.ts        ← task runner (fires every 60s)
-    src/transcribe.ts       ← voice transcription via whisper.cpp
-    entrypoint.sh           ← DB init + whisper model check + relay start
-  web/                      ← dashboard
-    src/server.ts           ← Bun HTTP server + all routes
-    src/pages/              ← onboarding wizard + dashboard
-    src/components/         ← settings, tasks, chat, memory, files UI
-```
+- **Status** — bot health, last message, active task count
+- **Chat** — full conversation history + send messages from the browser
+- **Tasks** — view, pause, or delete scheduled reminders
+- **Memory** — everything the bot has remembered about you
+- **Files** — files Claude has generated (download or delete)
+- **Settings** — update any API key live (relay restarts automatically)
 
 ---
 
-## Configuration
+## ⭐ Star History
 
-Only one value is required in `.env` before starting:
+If Claude Flux is useful to you, a star helps others find it.
 
-| Variable | Description |
-|----------|-------------|
-| `POSTGRES_PASSWORD` | Any strong password for PostgreSQL |
-
-Everything else — Telegram token, Anthropic key, voice settings, ElevenLabs — is entered
-via the web UI at `http://localhost` and stored in the database.
-
----
-
-## Voice Messages
-
-whisper.cpp is compiled into the relay image. On first start, the entrypoint automatically
-downloads `ggml-base.bin` (~142 MB, multilingual) if no model is found in `whisper-models/`.
-
-To use a different model, drop any whisper `.bin` file into `whisper-models/` before starting —
-the relay picks it up automatically, no configuration needed.
-
----
-
-## Memory System
-
-The bot automatically remembers things you tell it. Tags are processed silently:
-
-- `[REMEMBER: ...]` — stores a fact
-- `[GOAL: ... | DEADLINE: ...]` — tracks a goal
-- `[DONE: ...]` — marks a goal complete
-- `[SCHEDULE: ... | TYPE: once|daily|interval | ...]` — creates a scheduled task
-
-On every message, recent relevant context is injected into the prompt automatically.
-
----
-
-## Common Commands
-
-```bash
-docker compose up -d          # start all services
-docker compose down           # stop all services
-docker compose down -v        # stop + wipe all data (full reset)
-docker compose logs bot -f    # follow bot logs live
-docker compose ps             # check service status
-docker compose restart bot    # restart bot (also done automatically on settings save)
-```
-
----
-
-## Troubleshooting
-
-**Bot not responding**
-```bash
-docker compose logs bot --tail=30
-```
-
-**Claude CLI not authenticated**
-The relay uses `ANTHROPIC_API_KEY` from the settings database.
-Set it via the web UI at `http://localhost` → Settings → AI.
-
-**Full reset**
-```bash
-docker compose down -v    # removes all volumes (wipes database + whisper model)
-docker compose up -d
-```
+[![Star History Chart](https://api.star-history.com/svg?repos=ntzamos/claude-flux&type=Date)](https://star-history.com/#ntzamos/claude-flux&Date)
 
 ---
 
