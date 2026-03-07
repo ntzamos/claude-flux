@@ -21,23 +21,26 @@ if [ -z "$BRIDGE_IP" ] && command -v avahi-browse >/dev/null 2>&1; then
   BRIDGE_IP=$(avahi-browse -rtp _hue._tcp 2>/dev/null | grep "^=" | grep -o 'address=\[[^]]*\]' | head -1 | tr -d 'address=[]')
 fi
 
-# Fallback: scan common subnets for the bridge (looks for /api endpoint)
+# Fallback: scan common 192.168.x.x subnets in parallel (one subnet at a time)
 if [ -z "$BRIDGE_IP" ]; then
-  # Get local subnet from default route
-  SUBNET=$(ip route 2>/dev/null | grep "src " | head -1 | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.' | head -1 || true)
-  if [ -z "$SUBNET" ]; then
-    SUBNET=$(route -n get default 2>/dev/null | grep 'gateway' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.' | head -1 || true)
-  fi
-  if [ -n "$SUBNET" ]; then
+  FOUND=$(mktemp)
+  scan_subnet() {
+    local prefix=$1
     for i in $(seq 1 254); do
-      IP="${SUBNET}${i}"
-      RESP=$(curl -sf --max-time 1 "http://${IP}/api/" 2>/dev/null || true)
+      [ -s "$FOUND" ] && return
+      RESP=$(curl -sf --max-time 1 "http://${prefix}.${i}/api/" 2>/dev/null || true)
       if echo "$RESP" | grep -q "Hue\|hue\|lights\|groups\|not available for resource" 2>/dev/null; then
-        BRIDGE_IP="$IP"
-        break
+        echo "${prefix}.${i}" > "$FOUND"
+        return
       fi
     done
-  fi
+  }
+  for second in 0 1 2 3 4 5 50 100 178 179 180; do
+    scan_subnet "192.168.${second}" &
+  done
+  wait
+  [ -s "$FOUND" ] && BRIDGE_IP=$(cat "$FOUND")
+  rm -f "$FOUND"
 fi
 
 [ -z "$BRIDGE_IP" ] && fail "No Hue bridge found on the local network. Make sure you are on the same network as the bridge."
