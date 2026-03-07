@@ -1093,17 +1093,35 @@ const server = Bun.serve({
       }
     }
 
+    // ── File upload (from web chat) ───────────────────────────
+    if (pathname === "/api/upload" && req.method === "POST") {
+      try {
+        const form = await req.formData();
+        const file = form.get("file") as File | null;
+        if (!file) return json({ error: "No file provided" }, 400);
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const filename = `${Date.now()}-${safeName}`;
+        await Bun.write(`/files/${filename}`, await file.arrayBuffer());
+        return json({ filename, url: `/files/${filename}` });
+      } catch (err: any) {
+        return json({ error: err.message }, 500);
+      }
+    }
+
     // ── Web chat (proxies to relay internal chat API) ─────────
     if (pathname === "/api/chat" && req.method === "POST") {
       try {
-        const body = await req.json() as { message?: string };
-        if (!body.message?.trim()) {
+        const body = await req.json() as { message?: string; filename?: string };
+        if (!body.message?.trim() && !body.filename) {
           return json({ error: "message required" }, 400);
         }
+        const message = body.filename
+          ? `${body.message ? body.message + "\n" : ""}[ATTACHED: /files/${body.filename}]`
+          : body.message!;
         const res = await fetch("http://localhost:8080/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: body.message }),
+          body: JSON.stringify({ message }),
         });
         const data = await res.json();
         return json(data, res.status);
