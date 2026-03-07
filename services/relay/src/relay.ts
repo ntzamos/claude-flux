@@ -1376,9 +1376,31 @@ interface MessageBuffer {
   ctx: Context;
 }
 
+interface ActiveProcessing {
+  thinkingMsgId: number;
+  parts: BufferedPart[];
+  ctx: Context;
+  aborted: boolean;
+}
+
 const messageBuffers = new Map<number, MessageBuffer>();
+const activeProcessingMap = new Map<number, ActiveProcessing>();
 
 function addToBuffer(chatId: number, ctx: Context, part: BufferedPart): void {
+  // If Claude is actively processing for this chat, interrupt it
+  const active = activeProcessingMap.get(chatId);
+  if (active) {
+    active.aborted = true;
+    if (activeClaudeProc) activeClaudeProc.kill();
+    ctx.api.deleteMessage(chatId, active.thinkingMsgId).catch(() => {});
+    // Merge prior parts with new message into a fresh buffer
+    const priorParts = active.parts;
+    activeProcessingMap.delete(chatId);
+    const timer = setTimeout(() => flushBuffer(chatId), DEBOUNCE_MS);
+    messageBuffers.set(chatId, { timer, parts: [...priorParts, part], ctx });
+    return;
+  }
+
   const existing = messageBuffers.get(chatId);
   if (existing) {
     clearTimeout(existing.timer);
@@ -1437,6 +1459,9 @@ async function flushBuffer(chatId: number): Promise<void> {
     const thinkingMsg = await ctx.reply("Thinking…");
     await ctx.replyWithChatAction("typing");
 
+    const processing: ActiveProcessing = { thinkingMsgId: thinkingMsg.message_id, parts, ctx, aborted: false };
+    activeProcessingMap.set(chatId, processing);
+
     const [relevantContext, memoryContext, recentHistory] = await Promise.all([
       getRelevantContext(combinedText),
       getMemoryContext(),
@@ -1447,6 +1472,10 @@ async function flushBuffer(chatId: number): Promise<void> {
 
     const enrichedPrompt = buildPrompt(combinedText, relevantContext, memoryContext, recentHistory);
     const rawResponse = await callClaude(enrichedPrompt, { resume: true });
+
+    activeProcessingMap.delete(chatId);
+
+    if (processing.aborted) return;
 
     if (rawResponse.startsWith("Error:")) {
       await sendErrorWithRetry(ctx, rawResponse, enrichedPrompt, { resume: true }, thinkingMsg.message_id);
