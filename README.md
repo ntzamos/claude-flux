@@ -22,6 +22,22 @@ Claude Flux turns Telegram into a fully capable AI assistant — one that rememb
 
 ---
 
+## Use Cases
+
+**Personal**
+
+- **Daily life assistant** — Morning briefings, reminders, timers, and goal tracking. Claude remembers your preferences and follows up with you over time.
+- **Voice memo to action** — Send a voice note on the go. It transcribes and turns it into a saved note, task, or scheduled reminder automatically.
+- **Personal knowledge base** — Claude builds memory about you across conversations. Ask it anything about your past decisions, preferences, or notes.
+
+**Business**
+
+- **Solo founder ops assistant** — Manage to-dos, draft emails, set follow-ups, and get daily summaries — all from Telegram while on the move.
+- **Client-facing bot** — White-label it for a client (accountant, consultant, coach) who wants a private AI assistant connected to their own data.
+- **Team automation layer** — Connect it to internal tools via MCP servers. Query databases, trigger reports, send notifications — through a simple chat interface.
+
+---
+
 ## What You Get
 
 | | |
