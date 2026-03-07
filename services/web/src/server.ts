@@ -1145,8 +1145,7 @@ const server = Bun.serve({
     if (pathname === "/api/hue-setup" && req.method === "POST") {
       try {
         const proc = spawn(["bash", "/app/actions/hue_setup.sh"], { stdout: "pipe", stderr: "pipe" });
-        await proc.exited;
-        const out = await new Response(proc.stdout).text();
+        const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
         const data = JSON.parse(out.trim());
         if (data.ok) {
           await sql`INSERT INTO settings (key, value, updated_at) VALUES ('HUE_BRIDGE_IP', ${data.ip}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
