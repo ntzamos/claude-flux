@@ -7,6 +7,7 @@ import { renderFiles } from "../components/files.ts";
 import { renderCommands } from "../components/commands.ts";
 import { renderMcp } from "../components/mcp.ts";
 import { renderLists } from "../components/lists.ts";
+import { renderHue } from "../components/hue.ts";
 import { readdir } from "fs/promises";
 import { sql, getSettings } from "../db.ts";
 
@@ -148,6 +149,9 @@ export async function renderDashboard(
       break;
     case "mcp":
       tabContent = await renderMcp();
+      break;
+    case "hue":
+      tabContent = await renderHue();
       break;
     case "commands":
       tabContent = await renderCommands();

@@ -382,10 +382,12 @@ export function renderSettingsForm(
         )
       : renderFieldGroup(
           "Philips Hue (Local)",
-          `You're running locally. Use the direct bridge API — fast, no cloud needed. ` +
-          `<strong>Step 1:</strong> Press the button on your Hue bridge. ` +
-          `<strong>Step 2:</strong> Run in terminal: <code>curl -X POST http://&lt;bridge-ip&gt;/api -d '{"devicetype":"claude-flux"}'</code> to get your API key. ` +
-          `<strong>Step 3:</strong> Fill in the fields below. Then tell Claude to control your lights.`,
+          `Use the direct bridge API — fast, no cloud needed. ` +
+          `Press the button on your Hue bridge, then click <strong>Discover &amp; Setup</strong> to auto-fill the fields below. ` +
+          `<br><br>` +
+          `<button type="button" class="btn btn-sm" id="hue-setup-btn" onclick="hueSetup()" style="margin-top:0.25rem">` +
+          `Discover &amp; Setup</button> ` +
+          `<span id="hue-setup-status" style="font-size:0.75rem;color:var(--muted);margin-left:0.5rem"></span>`,
           HUE_LOCAL_FIELDS,
           current
         )
@@ -408,6 +410,39 @@ export function renderSettingsForm(
   </div>
 
   <script>
+  function hueSetup() {
+    var btn = document.getElementById('hue-setup-btn');
+    var status = document.getElementById('hue-setup-status');
+    btn.disabled = true;
+    btn.textContent = 'Searching…';
+    status.textContent = 'Press the button on your bridge now if you haven\'t already.';
+    status.style.color = 'var(--muted)';
+    fetch('/api/hue-setup', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) {
+          var ip = document.getElementById('HUE_BRIDGE_IP');
+          var key = document.getElementById('HUE_API_KEY');
+          if (ip) { ip.value = d.ip; }
+          if (key) { key.value = d.token; key.type = 'text'; }
+          btn.textContent = '✓ Done';
+          status.textContent = 'Bridge found at ' + d.ip + '. Click Save All Settings to save.';
+          status.style.color = 'var(--accent)';
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Discover & Setup';
+          status.textContent = d.error || 'Setup failed.';
+          status.style.color = '#ff5252';
+        }
+      })
+      .catch(function(e) {
+        btn.disabled = false;
+        btn.textContent = 'Discover & Setup';
+        status.textContent = 'Request failed: ' + e.message;
+        status.style.color = '#ff5252';
+      });
+  }
+
   function importEnv() {
     var raw = document.getElementById('env-paste').value;
     var filled = 0, skipped = 0;

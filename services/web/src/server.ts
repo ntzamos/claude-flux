@@ -1102,6 +1102,62 @@ const server = Bun.serve({
       }
     }
 
+    // ── Hue light control ────────────────────────────────────
+    if (pathname.startsWith("/api/hue/") && (req.method === "PUT" || req.method === "GET")) {
+      const settings = await getSettings();
+      const ip    = settings.HUE_BRIDGE_IP?.trim();
+      const token = settings.HUE_API_KEY?.trim();
+      if (!ip || !token) return json({ error: "Hue not configured" }, 400);
+
+      // PUT /api/hue/lights/:id/state
+      // PUT /api/hue/groups/:id/action
+      // PUT /api/hue/all
+      const huePath = pathname.slice("/api/hue".length); // e.g. /groups/1/action
+      if (huePath === "/all" && req.method === "PUT") {
+        const body = await req.json();
+        const groups = await fetch(`http://${ip}/api/${token}/groups`, { signal: AbortSignal.timeout(4000) });
+        const groupsData = await groups.json() as Record<string, any>;
+        await Promise.all(Object.keys(groupsData).map(id =>
+          fetch(`http://${ip}/api/${token}/groups/${id}/action`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body), signal: AbortSignal.timeout(4000),
+          }).catch(() => {})
+        ));
+        return json({ ok: true });
+      }
+
+      try {
+        const body = req.method === "PUT" ? await req.json() : undefined;
+        const res = await fetch(`http://${ip}/api/${token}${huePath}`, {
+          method: req.method,
+          headers: body ? { "Content-Type": "application/json" } : {},
+          body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(4000),
+        });
+        const data = await res.json();
+        return json(data, res.status);
+      } catch (err: any) {
+        return json({ error: err.message }, 502);
+      }
+    }
+
+    // ── Hue setup: discover bridge + create token ────────────
+    if (pathname === "/api/hue-setup" && req.method === "POST") {
+      try {
+        const proc = spawn(["bash", "/app/actions/hue_setup.sh"], { stdout: "pipe", stderr: "pipe" });
+        await proc.exited;
+        const out = await new Response(proc.stdout).text();
+        const data = JSON.parse(out.trim());
+        if (data.ok) {
+          await sql`INSERT INTO settings (key, value, updated_at) VALUES ('HUE_BRIDGE_IP', ${data.ip}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+          await sql`INSERT INTO settings (key, value, updated_at) VALUES ('HUE_API_KEY', ${data.token}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+        }
+        return json(data);
+      } catch (err: any) {
+        return json({ ok: false, error: err.message }, 500);
+      }
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 });

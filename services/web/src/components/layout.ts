@@ -67,6 +67,8 @@ export function layout(title: string, content: string, activeTab?: string, theme
   const { accentR: r, accentG: g, accentB: b } = t;
   const a = (op: number) => `rgba(${r},${g},${b},${op})`;
 
+  const hueConfigured = !!(themeSettings?.HUE_BRIDGE_IP || themeSettings?.HUE_ACCESS_TOKEN);
+
   const tabs = [
     { id: "status",   label: "Status",   icon: "activity" },
     { id: "tasks",    label: "Tasks",    icon: "check-square" },
@@ -74,6 +76,7 @@ export function layout(title: string, content: string, activeTab?: string, theme
     { id: "memory",   label: "Memory",   icon: "brain" },
     { id: "lists",    label: "Lists",    icon: "list" },
     { id: "files",    label: "Files",    icon: "folder" },
+    ...(hueConfigured ? [{ id: "hue", label: "Hue", icon: "lightbulb" }] : []),
     { id: "mcp",      label: "MCP",      icon: "plug" },
     { id: "commands", label: "Commands", icon: "terminal" },
     { id: "settings", label: "Settings", icon: "settings" },
