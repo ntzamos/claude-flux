@@ -1099,8 +1099,14 @@ const server = Bun.serve({
         const form = await req.formData();
         const file = form.get("file") as File | null;
         if (!file) return json({ error: "No file provided" }, 400);
+        const audioExts = ["mp3","ogg","wav","webm","m4a","aac","opus"];
+        const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+        const subdir = audioExts.includes(ext) ? "recordings" : "";
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const filename = `${Date.now()}-${safeName}`;
+        const baseName = `${Date.now()}-${safeName}`;
+        const filename = subdir ? `${subdir}/${baseName}` : baseName;
+        const { mkdir: mkdirFn } = await import("fs/promises");
+        if (subdir) await mkdirFn(`/files/${subdir}`, { recursive: true });
         await Bun.write(`/files/${filename}`, await file.arrayBuffer());
         return json({ filename, url: `/files/${filename}` });
       } catch (err: any) {
