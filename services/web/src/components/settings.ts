@@ -91,6 +91,19 @@ export const FIELD_GROUPS = [
   },
 ];
 
+const HUE_LOCAL_FIELDS = [
+  { key: "HUE_BRIDGE_IP", label: "Bridge IP",  type: "text",     placeholder: "192.168.1.x",  required: false },
+  { key: "HUE_API_KEY",   label: "API Key",    type: "password", placeholder: "abc123...",    required: false },
+];
+
+const HUE_REMOTE_FIELDS = [
+  { key: "HUE_BRIDGE_ID",      label: "Bridge ID",        type: "text",     placeholder: "001788xxxxxx",  required: false },
+  { key: "HUE_CLIENT_ID",      label: "OAuth Client ID",  type: "text",     placeholder: "your-app-id",   required: false },
+  { key: "HUE_CLIENT_SECRET",  label: "Client Secret",    type: "password", placeholder: "secret...",     required: false },
+  { key: "HUE_ACCESS_TOKEN",   label: "Access Token",     type: "password", placeholder: "eyJ...",        required: false },
+  { key: "HUE_REFRESH_TOKEN",  label: "Refresh Token",    type: "password", placeholder: "eyJ...",        required: false },
+];
+
 function renderThemeSection(current: Record<string, string>): string {
   const activeTheme = current.THEME || "flux";
   const activeMode  = current.THEME_MODE || "dark";
@@ -201,10 +214,41 @@ function renderThemeSection(current: Record<string, string>): string {
   </script>`;
 }
 
+function renderFieldGroup(
+  title: string,
+  description: string,
+  fields: { key: string; label: string; type: string; placeholder: string; required: boolean }[],
+  current: Record<string, string>
+): string {
+  const fieldsHtml = fields.map(f => {
+    const val = (current[f.key] ?? "").replace(/"/g, "&quot;");
+    const hasValue = val.length > 0;
+    return `
+    <div class="field">
+      <label for="${f.key}">${f.label}</label>
+      <div class="input-wrap">
+        <input id="${f.key}" name="${f.key}" type="${f.type}" value="${val}"
+          placeholder="${f.placeholder}" autocomplete="off"
+          ${f.type === "password" ? `data-reveal="false"` : ""}/>
+        ${f.type === "password" ? `<button type="button" class="reveal-btn" onclick="toggleReveal('${f.key}')">Show</button>` : ""}
+      </div>
+      ${hasValue && f.type === "password" ? `<span class="set-badge">✓ set</span>` : ""}
+    </div>`;
+  }).join("");
+  return `
+  <div class="card" style="margin-bottom:1rem;">
+    <div class="section-title">${title}</div>
+    <div class="section-desc">${description}</div>
+    ${fieldsHtml}
+  </div>`;
+}
+
 export function renderSettingsForm(
   current: Record<string, string>,
   toast?: { type: "success" | "error"; text: string }
 ): string {
+  const isRailway = !!process.env.RAILWAY_PUBLIC_DOMAIN;
+
   const groupsHtml = FIELD_GROUPS.map(group => {
     const fieldsHtml = group.fields.map(f => {
       const val = (current[f.key] ?? "").replace(/"/g, "&quot;");
@@ -325,6 +369,27 @@ export function renderSettingsForm(
 
   <form method="POST" action="/api/settings">
     ${groupsHtml}
+    ${isRailway
+      ? renderFieldGroup(
+          "Philips Hue (Remote / Cloud)",
+          `You're running on Railway. Use the Hue Remote API — works from anywhere. ` +
+          `<strong>Step 1:</strong> Register a free developer app at <a href="https://developers.meethue.com" target="_blank" style="color:var(--accent)">developers.meethue.com</a>. ` +
+          `<strong>Step 2:</strong> Complete the OAuth flow to get an access token. ` +
+          `<strong>Step 3:</strong> Find your bridge ID at <a href="https://discovery.meethue.com" target="_blank" style="color:var(--accent)">discovery.meethue.com</a>. ` +
+          `Then set the fields below and tell Claude to control your lights.`,
+          HUE_REMOTE_FIELDS,
+          current
+        )
+      : renderFieldGroup(
+          "Philips Hue (Local)",
+          `You're running locally. Use the direct bridge API — fast, no cloud needed. ` +
+          `<strong>Step 1:</strong> Press the button on your Hue bridge. ` +
+          `<strong>Step 2:</strong> Run in terminal: <code>curl -X POST http://&lt;bridge-ip&gt;/api -d '{"devicetype":"claude-flux"}'</code> to get your API key. ` +
+          `<strong>Step 3:</strong> Fill in the fields below. Then tell Claude to control your lights.`,
+          HUE_LOCAL_FIELDS,
+          current
+        )
+    }
     <div class="save-bar">
       <button type="submit" class="btn">Save All Settings</button>
     </div>
