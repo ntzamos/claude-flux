@@ -85,7 +85,7 @@ Everything else (ElevenLabs, OpenAI for embeddings, GitHub token) is optional an
 
 If Claude Flux is useful to you, a star helps others find it.
 
-[![Star History Chart](https://api.star-history.com/svg?repos=ntzamos/claude-flux&type=Date)](https://star-history.com/#ntzamos/claude-flux&Date)
+[![Star History Chart](https://api.star-history.com/image?repos=ntzamos/claude-flux&type=date&legend=top-left)](https://www.star-history.com/?repos=ntzamos%2Fclaude-flux&type=date&legend=top-left)
 
 ---
 
