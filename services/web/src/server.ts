@@ -1115,9 +1115,16 @@ const server = Bun.serve({
         if (!body.message?.trim() && !body.filename) {
           return json({ error: "message required" }, 400);
         }
-        const message = body.filename
+        const audioExts = ["mp3","ogg","wav","webm","m4a","aac","opus"];
+        const isAudio = body.filename
+          ? audioExts.includes((body.filename.split(".").pop() ?? "").toLowerCase())
+          : false;
+        let message = body.filename
           ? `${body.message ? body.message + "\n" : ""}[ATTACHED: /files/${body.filename}]`
           : body.message!;
+        if (isAudio) {
+          message += "\n\n[SYSTEM: The user sent a voice message from the web dashboard. Transcribe the audio file, respond to its content in text, then ALSO send a voice reply using: curl -s -X POST http://localhost:8080/welcome-voice -H 'Content-Type: application/json' -d '{\"text\":\"<your reply here>\"}']";
+        }
         const res = await fetch("http://localhost:8080/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
