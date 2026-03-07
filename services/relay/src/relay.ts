@@ -177,6 +177,7 @@ let isActive = false;
 let pendingCount = 0;
 let pendingRestart = false;
 let processingChain: Promise<void> = Promise.resolve();
+let activeClaudeProc: ReturnType<typeof spawn> | null = null;
 
 function enqueue(fn: () => Promise<void>, queueId?: string): void {
   pendingCount++;
@@ -437,10 +438,12 @@ async function callClaude(
       },
     });
 
+    activeClaudeProc = proc;
     const output = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
 
     const exitCode = await proc.exited;
+    activeClaudeProc = null;
 
     if (exitCode !== 0) {
       const detail = stderr || output || `exit code ${exitCode}`;
@@ -463,6 +466,7 @@ async function callClaude(
       return output.trim();
     }
   } catch (error) {
+    activeClaudeProc = null;
     console.error("Spawn error:", error);
     return `Error: Could not run Claude CLI`;
   }
@@ -912,6 +916,7 @@ const BOT_COMMANDS = [
   { command: "tunnel", description: "Enable/disable remote dashboard access (/tunnel on|off|status)" },
   { command: "fetch", description: "Fetch a webpage and return its content as markdown — /fetch <url>" },
   { command: "newsession", description: "Clear current Claude session and start fresh" },
+  { command: "cancel", description: "Cancel the current Claude request" },
 ];
 
 bot.command("start", async (ctx) => {
@@ -993,6 +998,20 @@ bot.command("newsession", async (ctx) => {
   session.lastActivity = new Date().toISOString();
   await saveSession(session);
   await ctx.reply("Session cleared. Next message will start a fresh Claude session.");
+});
+
+bot.command("cancel", async (ctx) => {
+  if (!activeClaudeProc) {
+    await ctx.reply("Nothing is running right now.");
+    return;
+  }
+  try {
+    activeClaudeProc.kill();
+    activeClaudeProc = null;
+    await ctx.reply("Cancelled.");
+  } catch (e) {
+    await ctx.reply("Could not cancel — it may have already finished.");
+  }
 });
 
 bot.command("botinfo", async (ctx) => {
