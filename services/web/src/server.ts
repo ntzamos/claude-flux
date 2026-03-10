@@ -280,7 +280,7 @@ const server = Bun.serve({
       try {
         const onboarded = await isOnboarded();
         if (!onboarded) return redirect("/onboarding");
-        if (!isAuthenticated(req) && !(await isLocalAccess())) return redirect("/login");
+        if (!(await isAuthenticated(req)) && !(await isLocalAccess())) return redirect("/login");
         return redirect("/dashboard");
       } catch {
         return redirect("/onboarding");
@@ -289,7 +289,7 @@ const server = Bun.serve({
 
     // ── Login page ───────────────────────────────────────────
     if (pathname === "/login" && req.method === "GET") {
-      if (isAuthenticated(req) || await isLocalAccess()) return redirect("/dashboard");
+      if ((await isAuthenticated(req)) || await isLocalAccess()) return redirect("/dashboard");
       const sent  = url.searchParams.get("sent") === "1";
       const error = url.searchParams.get("error") ?? undefined;
       const targetTid = url.searchParams.get("tid") ?? undefined;
@@ -352,13 +352,13 @@ const server = Bun.serve({
         return redirect("/login?sent=1&error=" + encodeURIComponent("Invalid code. Try again."));
       }
       clearOtp();
-      const { cookie } = createSession();
+      const { cookie } = await createSession();
       return new Response(null, { status: 302, headers: { Location: "/dashboard", "Set-Cookie": cookie } });
     }
 
     // ── Logout ───────────────────────────────────────────────
     if (pathname === "/api/auth/logout" && req.method === "POST") {
-      const clearCookie = clearSession(req);
+      const clearCookie = await clearSession(req);
       return new Response(null, { status: 302, headers: { Location: "/login", "Set-Cookie": clearCookie } });
     }
 

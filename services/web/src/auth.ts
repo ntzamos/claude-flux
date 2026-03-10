@@ -1,4 +1,4 @@
-import { getSettings, isOnboarded } from "./db.ts";
+import { getSettings, isOnboarded, sql } from "./db.ts";
 
 // ── Local access detection ────────────────────────────────────
 // Returns true when running locally with no public tunnel — auth can be skipped.
@@ -13,8 +13,7 @@ export async function isLocalAccess(): Promise<boolean> {
   return true;
 }
 
-// ── Session store ─────────────────────────────────────────────
-const sessions = new Map<string, number>(); // token → expiresAt
+// ── Session store (DB-backed, survives restarts) ─────────────
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // ── OTP store ─────────────────────────────────────────────────
@@ -36,33 +35,40 @@ export function getSessionToken(req: Request): string | null {
   return m ? m[1] : null;
 }
 
-export function isAuthenticated(req: Request): boolean {
+export async function isAuthenticated(req: Request): Promise<boolean> {
   const token = getSessionToken(req);
   if (!token) return false;
-  const exp = sessions.get(token);
-  if (!exp || Date.now() > exp) {
-    if (token) sessions.delete(token);
+  try {
+    const rows = await sql`SELECT expires_at FROM sessions WHERE token = ${token}`;
+    if (!rows.length) return false;
+    const exp = Number(rows[0].expires_at);
+    if (Date.now() > exp) {
+      sql`DELETE FROM sessions WHERE token = ${token}`.catch(() => {});
+      return false;
+    }
+    return true;
+  } catch {
     return false;
   }
-  return true;
 }
 
-export function createSession(): { token: string; cookie: string } {
+export async function createSession(): Promise<{ token: string; cookie: string }> {
   const token = generateToken();
-  sessions.set(token, Date.now() + SESSION_TTL);
-  const expires = new Date(Date.now() + SESSION_TTL).toUTCString();
+  const expiresAt = Date.now() + SESSION_TTL;
+  await sql`INSERT INTO sessions (token, expires_at) VALUES (${token}, ${expiresAt})`;
+  const expires = new Date(expiresAt).toUTCString();
   const cookie = "flux_session=" + token + "; Path=/; HttpOnly; SameSite=Lax; Expires=" + expires;
   return { token, cookie };
 }
 
-export function clearSession(req: Request): string {
+export async function clearSession(req: Request): Promise<string> {
   const token = getSessionToken(req);
-  if (token) sessions.delete(token);
+  if (token) await sql`DELETE FROM sessions WHERE token = ${token}`.catch(() => {});
   return "flux_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
 }
 
 export async function requireAuth(req: Request): Promise<Response | null> {
-  if (isAuthenticated(req)) return null;
+  if (await isAuthenticated(req)) return null;
   if (await isLocalAccess()) return null;
   const onboarded = await isOnboarded().catch(() => false);
   if (!onboarded) return new Response(null, { status: 302, headers: { Location: "/onboarding" } });
