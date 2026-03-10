@@ -23,8 +23,11 @@
  *   GET  /health                 → 200 ok
  */
 
-import { unlink } from "fs/promises";
+import { unlink, readFile, writeFile, mkdir } from "fs/promises";
 import { spawn } from "bun";
+import { createHash, randomBytes } from "crypto";
+import { join } from "path";
+import { homedir } from "os";
 import { sql, isOnboarded, getSettings, embedContent } from "./db.ts";
 import { renderOnboarding } from "./pages/onboarding.ts";
 import { renderDashboard } from "./pages/dashboard.ts";
@@ -132,8 +135,21 @@ function redirect(to: string, status = 302): Response {
   return new Response(null, { status, headers: { Location: to } });
 }
 
-// Pending Claude auth login process (waiting for code on stdin)
-let pendingAuthProc: ReturnType<typeof spawn> | null = null;
+// ── Claude auth (direct PKCE) ─────────────────────────────────
+const CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const CLAUDE_AUTH_URL = "https://claude.ai/oauth/authorize";
+const CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+const CLAUDE_MANUAL_REDIRECT = "https://platform.claude.com/oauth/code/callback";
+const CLAUDE_SCOPES = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers";
+const CREDENTIALS_PATH = join(homedir(), ".claude", ".credentials.json");
+
+let pendingOAuth: { codeVerifier: string; state: string } | null = null;
+
+function generatePKCE() {
+  const verifier = randomBytes(32).toString("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  return { verifier, challenge };
+}
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -228,6 +244,7 @@ async function restartRelay(): Promise<void> {
 
 const server = Bun.serve({
   port: parseInt(process.env.PORT || "80"),
+  idleTimeout: 30,
 
   async fetch(req) {
     const url = new URL(req.url);
@@ -488,7 +505,7 @@ const server = Bun.serve({
       }
     }
 
-    // ── Claude Auth API ───────────────────────────────────────
+    // ── Claude Auth API (OAuth PKCE) ──────────────────────────
 
     if (pathname === "/api/claude-auth/status" && req.method === "GET") {
       try {
@@ -508,41 +525,25 @@ const server = Bun.serve({
 
     if (pathname === "/api/claude-auth/login" && req.method === "POST") {
       try {
-        // Kill any previous pending login process
-        if (pendingAuthProc) { pendingAuthProc.kill(); pendingAuthProc = null; }
+        const { verifier, challenge } = generatePKCE();
+        const state = randomBytes(32).toString("base64url");
+        pendingOAuth = { codeVerifier: verifier, state };
+        // Auto-expire after 10 minutes
+        const ref = pendingOAuth;
+        setTimeout(() => { if (pendingOAuth === ref) pendingOAuth = null; }, 10 * 60 * 1000);
 
-        const proc = spawn(["claude", "auth", "login"], {
-          stdout: "pipe",
-          stderr: "pipe",
-          stdin: "pipe",
-          env: { ...process.env, BROWSER: "echo" },
-        });
+        // Build auth URL — same as `claude auth login` uses
+        const authUrl = new URL(CLAUDE_AUTH_URL);
+        authUrl.searchParams.set("code", "true");
+        authUrl.searchParams.set("client_id", CLAUDE_CLIENT_ID);
+        authUrl.searchParams.set("response_type", "code");
+        authUrl.searchParams.set("redirect_uri", CLAUDE_MANUAL_REDIRECT);
+        authUrl.searchParams.set("scope", CLAUDE_SCOPES);
+        authUrl.searchParams.set("code_challenge", challenge);
+        authUrl.searchParams.set("code_challenge_method", "S256");
+        authUrl.searchParams.set("state", state);
 
-        // Read stdout until we find the URL
-        let output = "";
-        const reader = proc.stdout.getReader();
-        const decoder = new TextDecoder();
-        const startTime = Date.now();
-
-        while (Date.now() - startTime < 10000) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          output += decoder.decode(value, { stream: true });
-          const urlMatch = output.match(/https:\/\/[^\s\n]+/);
-          if (urlMatch) {
-            reader.releaseLock();
-            // Keep process alive — it's waiting for the auth code on stdin
-            pendingAuthProc = proc;
-            // Auto-cleanup after 10 minutes
-            setTimeout(() => { if (pendingAuthProc === proc) { proc.kill(); pendingAuthProc = null; } }, 10 * 60 * 1000);
-            return json({ ok: true, url: urlMatch[0], needsCode: true });
-          }
-        }
-
-        reader.releaseLock();
-        proc.kill();
-        const stderr = await new Response(proc.stderr).text();
-        return json({ error: stderr.trim() || "Could not get login URL." });
+        return json({ ok: true, url: authUrl.toString(), needsCode: true });
       } catch (err: any) {
         return json({ error: err.message }, 500);
       }
@@ -552,33 +553,73 @@ const server = Bun.serve({
       try {
         const { code } = (await req.json()) as { code?: string };
         if (!code?.trim()) return json({ error: "Code is required." }, 400);
-        if (!pendingAuthProc) return json({ error: "No pending login. Start a new login first." }, 400);
+        if (!pendingOAuth) return json({ error: "No pending login. Start a new login first." }, 400);
 
-        // Write the auth code to the CLI's stdin (Bun FileSink API)
-        const stdin = pendingAuthProc.stdin as any;
-        stdin.write(code.trim() + "\n");
-        stdin.end();
+        // The pasted code may be "authCode#state" — just use the auth code part
+        const authCode = code.trim().split("#")[0];
 
-        // Wait for process to complete (with timeout)
-        const exitCode = await Promise.race([
-          pendingAuthProc.exited,
-          new Promise<number>((resolve) => setTimeout(() => resolve(-1), 15000)),
-        ]);
-        pendingAuthProc = null;
+        // Exchange code for tokens — JSON body, exactly like the CLI does
+        const tokenRes = await fetch(CLAUDE_TOKEN_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            grant_type: "authorization_code",
+            client_id: CLAUDE_CLIENT_ID,
+            code: authCode,
+            code_verifier: pendingOAuth.codeVerifier,
+            redirect_uri: CLAUDE_MANUAL_REDIRECT,
+            state: pendingOAuth.state,
+          }),
+        });
 
-        if (exitCode === 0) {
-          return json({ ok: true });
-        } else {
-          return json({ error: "Authentication failed. The code may be invalid or expired." });
+        if (!tokenRes.ok) {
+          const errBody = await tokenRes.text();
+          console.error("[claude-auth] Token exchange failed:", tokenRes.status, errBody);
+          return json({ error: "Token exchange failed. The code may be invalid or expired." });
         }
+
+        const tokens = await tokenRes.json() as {
+          access_token: string;
+          refresh_token?: string;
+          expires_in?: number;
+          scope?: string;
+        };
+        pendingOAuth = null;
+
+        // Save to ~/.claude/.credentials.json (where CLI reads from)
+        const credDir = join(homedir(), ".claude");
+        await mkdir(credDir, { recursive: true });
+        let credentials: Record<string, unknown> = {};
+        try { credentials = JSON.parse(await readFile(CREDENTIALS_PATH, "utf8")); } catch {}
+        credentials.claudeAiOauth = {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token ?? null,
+          expiresAt: new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString(),
+          scopes: CLAUDE_SCOPES.split(" "),
+        };
+        await writeFile(CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
+        console.log("[claude-auth] OAuth tokens saved to", CREDENTIALS_PATH);
+
+        // Update settings
+        await sql`INSERT INTO settings (key, value, updated_at) VALUES ('CLAUDE_AUTH_METHOD', 'oauth', NOW()) ON CONFLICT (key) DO UPDATE SET value = 'oauth', updated_at = NOW()`;
+
+        return json({ ok: true });
       } catch (err: any) {
-        pendingAuthProc = null;
+        console.error("[claude-auth] Code exchange error:", err);
         return json({ error: err.message }, 500);
       }
     }
 
     if (pathname === "/api/claude-auth/logout" && req.method === "POST") {
       try {
+        // Clear credentials
+        try {
+          let credentials: Record<string, unknown> = {};
+          try { credentials = JSON.parse(await readFile(CREDENTIALS_PATH, "utf8")); } catch {}
+          delete credentials.claudeAiOauth;
+          await writeFile(CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
+        } catch {}
+        // Also run CLI logout
         const proc = spawn(["claude", "auth", "logout"], { stdout: "pipe", stderr: "pipe" });
         await proc.exited;
         return json({ ok: true });

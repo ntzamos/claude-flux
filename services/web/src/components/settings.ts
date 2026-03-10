@@ -419,13 +419,21 @@ function renderClaudeAuthSection(current: Record<string, string>): string {
     var status = document.getElementById('oauth-action-status');
     btn.disabled = true;
     btn.textContent = 'Starting...';
-    status.textContent = '';
+    status.textContent = 'Preparing login... (this takes a few seconds)';
+    status.style.color = 'var(--muted)';
+    // Open window immediately (on user click) to avoid popup blocker
+    var authWindow = window.open('about:blank', '_blank');
     fetch('/api/claude-auth/login', { method: 'POST' })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (d.url) {
-          window.open(d.url, '_blank');
-          status.innerHTML = 'Browser tab opened — sign in there.';
+          if (authWindow && !authWindow.closed) {
+            authWindow.location.href = d.url;
+          } else {
+            // Fallback: show link if popup was blocked
+            status.innerHTML = '<a href="' + d.url + '" target="_blank" style="color:var(--accent)">Click here to sign in</a>';
+          }
+          status.innerHTML = 'Sign in in the browser tab that opened.';
           status.style.color = 'var(--accent)';
           // Show code paste step
           document.getElementById('oauth-step2').style.display = 'block';
@@ -435,6 +443,7 @@ function renderClaudeAuthSection(current: Record<string, string>): string {
           btn.textContent = 'Sign in with Browser';
           btn.disabled = false;
         } else if (d.error) {
+          if (authWindow) authWindow.close();
           status.textContent = d.error;
           status.style.color = '#ff5252';
           btn.textContent = 'Sign in with Browser';
@@ -442,6 +451,7 @@ function renderClaudeAuthSection(current: Record<string, string>): string {
         }
       })
       .catch(function(e) {
+        if (authWindow) authWindow.close();
         status.textContent = 'Request failed: ' + e.message;
         status.style.color = '#ff5252';
         btn.textContent = 'Sign in with Browser';

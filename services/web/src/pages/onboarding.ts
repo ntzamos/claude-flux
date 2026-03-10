@@ -210,22 +210,28 @@ export async function renderOnboarding(stepId?: string, toast?: { type: "success
     var btn = document.getElementById('ob-oauth-login-btn');
     var status = document.getElementById('ob-oauth-action');
     btn.disabled = true; btn.textContent = 'Starting...';
-    status.textContent = '';
+    status.textContent = 'Preparing login...';
+    status.style.color = 'var(--muted)';
+    var authWindow = window.open('about:blank', '_blank');
     fetch('/api/claude-auth/login', { method: 'POST' })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (d.url) {
-          window.open(d.url, '_blank');
+          if (authWindow && !authWindow.closed) {
+            authWindow.location.href = d.url;
+          } else {
+            status.innerHTML = '<a href="' + d.url + '" target="_blank" style="color:var(--accent)">Click here to sign in</a>';
+          }
           status.innerHTML = 'Sign in in the browser tab that opened.';
           status.style.color = 'var(--accent)';
           btn.textContent = 'Sign in with Browser';
           btn.disabled = false;
-          // Show code paste step
           document.getElementById('ob-oauth-step2').style.display = 'block';
           document.getElementById('ob-oauth-code').value = '';
           document.getElementById('ob-oauth-code').focus();
           document.getElementById('ob-oauth-code-status').textContent = '';
         } else {
+          if (authWindow) authWindow.close();
           status.textContent = d.error || 'Failed to start login.';
           status.style.color = '#ff5252';
           btn.textContent = 'Sign in with Browser';
@@ -233,6 +239,7 @@ export async function renderOnboarding(stepId?: string, toast?: { type: "success
         }
       })
       .catch(function(e) {
+        if (authWindow) authWindow.close();
         status.textContent = 'Request failed: ' + e.message;
         status.style.color = '#ff5252';
         btn.textContent = 'Sign in with Browser';
