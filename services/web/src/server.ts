@@ -554,10 +554,10 @@ const server = Bun.serve({
         if (!code?.trim()) return json({ error: "Code is required." }, 400);
         if (!pendingAuthProc) return json({ error: "No pending login. Start a new login first." }, 400);
 
-        // Write the auth code to the CLI's stdin
-        const writer = pendingAuthProc.stdin.getWriter();
-        await writer.write(new TextEncoder().encode(code.trim() + "\n"));
-        await writer.close();
+        // Write the auth code to the CLI's stdin (Bun FileSink API)
+        const stdin = pendingAuthProc.stdin as any;
+        stdin.write(code.trim() + "\n");
+        stdin.end();
 
         // Wait for process to complete (with timeout)
         const exitCode = await Promise.race([
