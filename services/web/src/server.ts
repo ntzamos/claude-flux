@@ -132,6 +132,9 @@ function redirect(to: string, status = 302): Response {
   return new Response(null, { status, headers: { Location: to } });
 }
 
+// Pending Claude auth login process (waiting for code on stdin)
+let pendingAuthProc: ReturnType<typeof spawn> | null = null;
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -505,14 +508,17 @@ const server = Bun.serve({
 
     if (pathname === "/api/claude-auth/login" && req.method === "POST") {
       try {
-        // Spawn claude auth login and capture the URL from output
+        // Kill any previous pending login process
+        if (pendingAuthProc) { pendingAuthProc.kill(); pendingAuthProc = null; }
+
         const proc = spawn(["claude", "auth", "login"], {
           stdout: "pipe",
           stderr: "pipe",
-          env: { ...process.env, BROWSER: "echo" }, // prevent opening browser, just print URL
+          stdin: "pipe",
+          env: { ...process.env, BROWSER: "echo" },
         });
 
-        // Read output with a timeout — the URL appears quickly
+        // Read stdout until we find the URL
         let output = "";
         const reader = proc.stdout.getReader();
         const decoder = new TextDecoder();
@@ -522,31 +528,52 @@ const server = Bun.serve({
           const { done, value } = await reader.read();
           if (done) break;
           output += decoder.decode(value, { stream: true });
-          // Look for URL in output
           const urlMatch = output.match(/https:\/\/[^\s\n]+/);
           if (urlMatch) {
             reader.releaseLock();
-            // Don't kill the process — it needs to stay alive to receive the callback
-            // It will auto-exit after auth completes or times out
-            return new Response(JSON.stringify({ ok: true, url: urlMatch[0] }), {
-              headers: { "Content-Type": "application/json" },
-            });
+            // Keep process alive — it's waiting for the auth code on stdin
+            pendingAuthProc = proc;
+            // Auto-cleanup after 10 minutes
+            setTimeout(() => { if (pendingAuthProc === proc) { proc.kill(); pendingAuthProc = null; } }, 10 * 60 * 1000);
+            return json({ ok: true, url: urlMatch[0], needsCode: true });
           }
         }
 
         reader.releaseLock();
         proc.kill();
-
-        // Check stderr for any errors
         const stderr = await new Response(proc.stderr).text();
-        return new Response(JSON.stringify({ error: stderr.trim() || "Could not get login URL. The CLI may already be authenticated." }), {
-          headers: { "Content-Type": "application/json" },
-        });
+        return json({ error: stderr.trim() || "Could not get login URL." });
       } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        });
+        return json({ error: err.message }, 500);
+      }
+    }
+
+    if (pathname === "/api/claude-auth/code" && req.method === "POST") {
+      try {
+        const { code } = (await req.json()) as { code?: string };
+        if (!code?.trim()) return json({ error: "Code is required." }, 400);
+        if (!pendingAuthProc) return json({ error: "No pending login. Start a new login first." }, 400);
+
+        // Write the auth code to the CLI's stdin
+        const writer = pendingAuthProc.stdin.getWriter();
+        await writer.write(new TextEncoder().encode(code.trim() + "\n"));
+        await writer.close();
+
+        // Wait for process to complete (with timeout)
+        const exitCode = await Promise.race([
+          pendingAuthProc.exited,
+          new Promise<number>((resolve) => setTimeout(() => resolve(-1), 15000)),
+        ]);
+        pendingAuthProc = null;
+
+        if (exitCode === 0) {
+          return json({ ok: true });
+        } else {
+          return json({ error: "Authentication failed. The code may be invalid or expired." });
+        }
+      } catch (err: any) {
+        pendingAuthProc = null;
+        return json({ error: err.message }, 500);
       }
     }
 
@@ -554,9 +581,9 @@ const server = Bun.serve({
       try {
         const proc = spawn(["claude", "auth", "logout"], { stdout: "pipe", stderr: "pipe" });
         await proc.exited;
-        return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+        return json({ ok: true });
       } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+        return json({ error: err.message }, 500);
       }
     }
 

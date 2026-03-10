@@ -73,6 +73,16 @@ function renderOnboardingAuthToggle(existing: Record<string, string>): string {
         <button type="button" id="ob-oauth-login-btn" class="btn btn-sm" onclick="startOnboardingLogin()">Sign in with Browser</button>
         <span id="ob-oauth-action" style="font-size:0.72rem;color:var(--muted)"></span>
       </div>
+      <!-- Code paste step -->
+      <div id="ob-oauth-step2" style="display:none;margin-top:0.65rem;padding-top:0.65rem;border-top:1px solid var(--border2)">
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:0.5rem">Paste the authentication code shown in your browser:</div>
+        <div style="display:flex;gap:0.5rem;align-items:center">
+          <input type="text" id="ob-oauth-code" placeholder="Paste code here"
+            style="flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:0.5rem 0.65rem;color:var(--text);font-size:0.88rem;font-family:monospace;outline:none" />
+          <button type="button" id="ob-oauth-code-btn" class="btn btn-sm" onclick="submitOnboardingCode()">Submit</button>
+        </div>
+        <span id="ob-oauth-code-status" style="font-size:0.72rem;color:var(--muted);margin-top:0.3rem;display:block"></span>
+      </div>
     </div>
     <p style="font-size:0.75rem;color:var(--muted);line-height:1.5;margin-bottom:0.5rem">
       ${isOAuth ? "Or paste an API key below instead:" : `Go to <strong>console.anthropic.com</strong> to create an API key, or use Browser Login.`}
@@ -206,11 +216,15 @@ export async function renderOnboarding(stepId?: string, toast?: { type: "success
       .then(function(d) {
         if (d.url) {
           window.open(d.url, '_blank');
-          status.innerHTML = 'Complete sign-in in the browser tab that opened.';
+          status.innerHTML = 'Sign in in the browser tab that opened.';
           status.style.color = 'var(--accent)';
-          btn.textContent = 'Check Status';
+          btn.textContent = 'Sign in with Browser';
           btn.disabled = false;
-          btn.onclick = function() { checkOnboardingAuth(); };
+          // Show code paste step
+          document.getElementById('ob-oauth-step2').style.display = 'block';
+          document.getElementById('ob-oauth-code').value = '';
+          document.getElementById('ob-oauth-code').focus();
+          document.getElementById('ob-oauth-code-status').textContent = '';
         } else {
           status.textContent = d.error || 'Failed to start login.';
           status.style.color = '#ff5252';
@@ -223,6 +237,31 @@ export async function renderOnboarding(stepId?: string, toast?: { type: "success
         status.style.color = '#ff5252';
         btn.textContent = 'Sign in with Browser';
         btn.disabled = false;
+      });
+  }
+
+  function submitOnboardingCode() {
+    var code = document.getElementById('ob-oauth-code').value.trim();
+    var btn = document.getElementById('ob-oauth-code-btn');
+    var status = document.getElementById('ob-oauth-code-status');
+    if (!code) { status.textContent = 'Please paste the code.'; status.style.color = '#ff5252'; return; }
+    btn.disabled = true; btn.textContent = 'Verifying...'; status.textContent = '';
+    fetch('/api/claude-auth/code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code }) })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        btn.disabled = false; btn.textContent = 'Submit';
+        if (d.ok) {
+          status.textContent = 'Authenticated!'; status.style.color = 'var(--accent)';
+          document.getElementById('ob-oauth-step2').style.display = 'none';
+          document.getElementById('ob-oauth-action').textContent = '';
+          checkOnboardingAuth();
+        } else {
+          status.textContent = d.error || 'Authentication failed.'; status.style.color = '#ff5252';
+        }
+      })
+      .catch(function(e) {
+        btn.disabled = false; btn.textContent = 'Submit';
+        status.textContent = 'Request failed: ' + e.message; status.style.color = '#ff5252';
       });
   }
   </script>` : ""}

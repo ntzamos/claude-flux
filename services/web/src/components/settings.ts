@@ -331,14 +331,32 @@ function renderClaudeAuthSection(current: Record<string, string>): string {
       <div id="oauth-status" style="font-size:0.82rem;color:var(--muted);padding:0.65rem 0.85rem;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;margin-bottom:0.65rem">
         Checking authentication status...
       </div>
-      <div style="display:flex;gap:0.5rem;align-items:center">
-        <button type="button" id="oauth-login-btn" class="btn btn-sm" onclick="startClaudeLogin()">
-          Sign in with Browser
-        </button>
-        <button type="button" id="oauth-logout-btn" class="btn btn-sm" style="display:none;background:rgba(255,82,82,0.1);color:#ff7070;border:1px solid rgba(255,82,82,0.25)" onclick="claudeLogout()">
-          Sign Out
-        </button>
-        <span id="oauth-action-status" style="font-size:0.72rem;color:var(--muted)"></span>
+
+      <!-- Step 1: Start login -->
+      <div id="oauth-step1">
+        <div style="display:flex;gap:0.5rem;align-items:center">
+          <button type="button" id="oauth-login-btn" class="btn btn-sm" onclick="startClaudeLogin()">
+            Sign in with Browser
+          </button>
+          <button type="button" id="oauth-logout-btn" class="btn btn-sm" style="display:none;background:rgba(255,82,82,0.1);color:#ff7070;border:1px solid rgba(255,82,82,0.25)" onclick="claudeLogout()">
+            Sign Out
+          </button>
+          <span id="oauth-action-status" style="font-size:0.72rem;color:var(--muted)"></span>
+        </div>
+      </div>
+
+      <!-- Step 2: Paste auth code -->
+      <div id="oauth-step2" style="display:none;margin-top:0.65rem;padding:0.85rem;background:var(--surface2);border:1px solid var(--border2);border-radius:8px">
+        <div style="font-size:0.82rem;color:var(--text);margin-bottom:0.5rem;font-weight:600">Paste the authentication code</div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.65rem;line-height:1.5">
+          After signing in, the browser will show an authentication code. Copy it and paste it below.
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center">
+          <input type="text" id="oauth-code-input" placeholder="Paste code here"
+            style="flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:0.5rem 0.65rem;color:var(--text);font-size:0.88rem;font-family:monospace;outline:none" />
+          <button type="button" id="oauth-code-btn" class="btn btn-sm" onclick="submitAuthCode()">Submit</button>
+        </div>
+        <span id="oauth-code-status" style="font-size:0.72rem;color:var(--muted);margin-top:0.35rem;display:block"></span>
       </div>
     </div>
 
@@ -353,10 +371,8 @@ function renderClaudeAuthSection(current: Record<string, string>): string {
     var isOAuth = method === 'oauth';
     document.getElementById('oauth-section').style.display = isOAuth ? 'block' : 'none';
     document.getElementById('apikey-section').style.display = isOAuth ? 'none' : 'block';
-    // Move the API key field into/out of the apikey-section
     var akField = document.getElementById('ANTHROPIC_API_KEY');
     if (akField) akField.closest('.field').style.display = isOAuth ? 'none' : '';
-    // Update tab styles
     var tabApi = document.getElementById('auth-tab-api');
     var tabOauth = document.getElementById('auth-tab-oauth');
     if (isOAuth) {
@@ -373,6 +389,7 @@ function renderClaudeAuthSection(current: Record<string, string>): string {
     var el = document.getElementById('oauth-status');
     el.textContent = 'Checking...';
     el.style.color = 'var(--muted)';
+    document.getElementById('oauth-step2').style.display = 'none';
     fetch('/api/claude-auth/status')
       .then(function(r) { return r.json(); })
       .then(function(d) {
@@ -383,8 +400,11 @@ function renderClaudeAuthSection(current: Record<string, string>): string {
           document.getElementById('oauth-login-btn').style.display = 'none';
           document.getElementById('oauth-logout-btn').style.display = '';
         } else {
-          el.innerHTML = '<span style="color:var(--muted)">Not signed in.</span> Click the button below to authenticate via browser.';
+          el.innerHTML = '<span style="color:var(--muted)">Not signed in.</span> Click below to start.';
           document.getElementById('oauth-login-btn').style.display = '';
+          document.getElementById('oauth-login-btn').textContent = 'Sign in with Browser';
+          document.getElementById('oauth-login-btn').disabled = false;
+          document.getElementById('oauth-login-btn').onclick = startClaudeLogin;
           document.getElementById('oauth-logout-btn').style.display = 'none';
         }
       })
@@ -400,17 +420,20 @@ function renderClaudeAuthSection(current: Record<string, string>): string {
     btn.disabled = true;
     btn.textContent = 'Starting...';
     status.textContent = '';
-    status.style.color = 'var(--muted)';
     fetch('/api/claude-auth/login', { method: 'POST' })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (d.url) {
           window.open(d.url, '_blank');
-          status.innerHTML = 'A browser tab should have opened. Complete sign-in there, then click below.';
+          status.innerHTML = 'Browser tab opened — sign in there.';
           status.style.color = 'var(--accent)';
-          btn.textContent = 'Check Status';
+          // Show code paste step
+          document.getElementById('oauth-step2').style.display = 'block';
+          document.getElementById('oauth-code-input').value = '';
+          document.getElementById('oauth-code-input').focus();
+          document.getElementById('oauth-code-status').textContent = '';
+          btn.textContent = 'Sign in with Browser';
           btn.disabled = false;
-          btn.onclick = function() { checkClaudeAuth(); btn.textContent = 'Sign in with Browser'; btn.onclick = startClaudeLogin; };
         } else if (d.error) {
           status.textContent = d.error;
           status.style.color = '#ff5252';
@@ -426,22 +449,45 @@ function renderClaudeAuthSection(current: Record<string, string>): string {
       });
   }
 
+  function submitAuthCode() {
+    var code = document.getElementById('oauth-code-input').value.trim();
+    var btn = document.getElementById('oauth-code-btn');
+    var status = document.getElementById('oauth-code-status');
+    if (!code) { status.textContent = 'Please paste the code.'; status.style.color = '#ff5252'; return; }
+    btn.disabled = true;
+    btn.textContent = 'Verifying...';
+    status.textContent = '';
+    fetch('/api/claude-auth/code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code }) })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        btn.disabled = false;
+        btn.textContent = 'Submit';
+        if (d.ok) {
+          status.textContent = 'Authenticated successfully!';
+          status.style.color = 'var(--accent)';
+          document.getElementById('oauth-step2').style.display = 'none';
+          document.getElementById('oauth-action-status').textContent = '';
+          checkClaudeAuth();
+        } else {
+          status.textContent = d.error || 'Authentication failed.';
+          status.style.color = '#ff5252';
+        }
+      })
+      .catch(function(e) {
+        btn.disabled = false;
+        btn.textContent = 'Submit';
+        status.textContent = 'Request failed: ' + e.message;
+        status.style.color = '#ff5252';
+      });
+  }
+
   function claudeLogout() {
     var btn = document.getElementById('oauth-logout-btn');
     btn.disabled = true;
     btn.textContent = 'Signing out...';
     fetch('/api/claude-auth/logout', { method: 'POST' })
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        btn.disabled = false;
-        btn.textContent = 'Sign Out';
-        checkClaudeAuth();
-      })
-      .catch(function() {
-        btn.disabled = false;
-        btn.textContent = 'Sign Out';
-        checkClaudeAuth();
-      });
+      .then(function() { btn.disabled = false; btn.textContent = 'Sign Out'; checkClaudeAuth(); })
+      .catch(function() { btn.disabled = false; btn.textContent = 'Sign Out'; checkClaudeAuth(); });
   }
 
   // Auto-check on page load if oauth is the selected method
