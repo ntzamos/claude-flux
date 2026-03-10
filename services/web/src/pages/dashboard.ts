@@ -404,9 +404,15 @@ export async function renderDashboard(
     case "commands":
       tabContent = await renderCommands();
       break;
-    case "settings":
-      tabContent = renderSettingsForm(settings, toast);
+    case "settings": {
+      const memberRows = await sql`SELECT id, telegram_id, name, role FROM members ORDER BY role ASC, created_at ASC`.catch(() => []);
+      // Ensure owner is always shown
+      const ownerTid = settings.TELEGRAM_USER_ID?.trim();
+      const hasOwner = memberRows.some((m: any) => m.telegram_id === ownerTid);
+      const members = hasOwner ? memberRows : (ownerTid ? [{ id: "", telegram_id: ownerTid, name: settings.USER_NAME || "Owner", role: "owner" }, ...memberRows] : memberRows);
+      tabContent = renderSettingsForm(settings, members as any, toast);
       break;
+    }
     default:
       tabContent = await renderStatus();
   }

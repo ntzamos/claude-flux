@@ -135,6 +135,34 @@ const PROJECT_ROOT = dirname(dirname(import.meta.path));
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const ALLOWED_USER_ID = process.env.TELEGRAM_USER_ID || "";
 const CLAUDE_PATH = process.env.CLAUDE_PATH || "claude";
+
+// Members cache — loaded at startup, includes owner + members
+let authorizedMembers = new Map<string, { name: string; role: string }>(); // telegram_id → { name, role }
+
+async function loadMembers(): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const rows = await sql`SELECT telegram_id, name, role FROM members`;
+    const map = new Map<string, { name: string; role: string }>();
+    for (const row of rows) {
+      map.set(row.telegram_id, { name: row.name, role: row.role });
+    }
+    // Always include the owner from settings if not already in members
+    if (ALLOWED_USER_ID && !map.has(ALLOWED_USER_ID)) {
+      map.set(ALLOWED_USER_ID, { name: process.env.USER_NAME || "Owner", role: "owner" });
+    }
+    authorizedMembers = map;
+    console.log(`[members] Loaded ${map.size} authorized user(s)`);
+  } catch (err) {
+    console.error("[members] Failed to load:", err);
+    // Fallback: at least allow the owner
+    if (ALLOWED_USER_ID) {
+      authorizedMembers.set(ALLOWED_USER_ID, { name: process.env.USER_NAME || "Owner", role: "owner" });
+    }
+  }
+}
+
+await loadMembers();
 const PROJECT_DIR = process.env.PROJECT_DIR || "";
 const RELAY_DIR = process.env.RELAY_DIR || join(process.env.HOME || "/home/relay", ".claude-relay");
 
@@ -320,13 +348,14 @@ async function saveMessage(
   role: string,
   content: string,
   channel = "telegram",
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
+  telegramUserId?: string
 ): Promise<void> {
   if (!process.env.DATABASE_URL) return;
   try {
     const rows = await sql`
-      INSERT INTO messages (role, content, channel, metadata)
-      VALUES (${role}, ${content}, ${channel}, ${metadata || {}})
+      INSERT INTO messages (role, content, channel, metadata, telegram_user_id)
+      VALUES (${role}, ${content}, ${channel}, ${metadata || {}}, ${telegramUserId || null})
       RETURNING id
     `;
     const id = rows[0]?.id;
@@ -373,8 +402,8 @@ const bot = new Bot(BOT_TOKEN);
 bot.use(async (ctx, next) => {
   const userId = ctx.from?.id.toString();
 
-  // If ALLOWED_USER_ID is set, enforce it
-  if (ALLOWED_USER_ID && userId !== ALLOWED_USER_ID) {
+  // Check if user is the owner OR a registered member
+  if (ALLOWED_USER_ID && userId !== ALLOWED_USER_ID && !authorizedMembers.has(userId || "")) {
     console.log(`Unauthorized: ${userId}`);
     await ctx.reply("This bot is private.");
     return;
@@ -1421,6 +1450,7 @@ async function flushBuffer(chatId: number): Promise<void> {
   const { parts, ctx } = buffer;
   const lastMsgId = parts[parts.length - 1].originalMessageId;
   const onlyVoice = parts.length === 1 && parts[0].type === "voice";
+  const senderTelegramId = ctx.from?.id?.toString();
 
   // Build combined prompt
   const promptParts: string[] = [];
@@ -1468,9 +1498,18 @@ async function flushBuffer(chatId: number): Promise<void> {
       getRecentHistory(),
     ]);
 
-    await saveMessage("user", historyLabel);
+    await saveMessage("user", historyLabel, "telegram", undefined, senderTelegramId);
 
-    const enrichedPrompt = buildPrompt(combinedText, relevantContext, memoryContext, recentHistory);
+    // Prefix message with sender name if from a member (not owner)
+    let finalPrompt = combinedText;
+    if (senderTelegramId && senderTelegramId !== ALLOWED_USER_ID) {
+      const member = authorizedMembers.get(senderTelegramId);
+      if (member?.name) {
+        finalPrompt = `[Message from ${member.name}]: ${combinedText}`;
+      }
+    }
+
+    const enrichedPrompt = buildPrompt(finalPrompt, relevantContext, memoryContext, recentHistory);
     const rawResponse = await callClaude(enrichedPrompt, { resume: true });
 
     activeProcessingMap.delete(chatId);
@@ -1769,6 +1808,14 @@ Bun.serve({
         setTimeout(() => process.exit(0), 300);
       }
       return new Response(JSON.stringify({ ok: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Reload members cache without full restart
+    if (req.method === "POST" && url.pathname === "/reload-members") {
+      await loadMembers();
+      return new Response(JSON.stringify({ ok: true, count: authorizedMembers.size }), {
         headers: { "Content-Type": "application/json" },
       });
     }

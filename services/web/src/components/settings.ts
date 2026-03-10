@@ -9,9 +9,9 @@ export const FIELD_GROUPS = [
   },
   {
     title: "AI",
-    description: "Claude API key — used by the relay to call Claude Code CLI.",
+    description: "Choose how the relay authenticates with Claude. You can use an API key or sign in with your browser.",
     fields: [
-      { key: "ANTHROPIC_API_KEY", label: "Anthropic API Key", type: "password", placeholder: "sk-ant-...", required: true },
+      { key: "ANTHROPIC_API_KEY", label: "Anthropic API Key", type: "password", placeholder: "sk-ant-...", required: false },
     ],
   },
   {
@@ -243,8 +243,217 @@ function renderFieldGroup(
   </div>`;
 }
 
+export function renderMembersSection(
+  members: { id: string; telegram_id: string; name: string; role: string }[]
+): string {
+  const rows = members.map(m => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0.65rem 0;border-bottom:1px solid var(--border2)">
+      <div style="display:flex;align-items:center;gap:0.6rem">
+        <span style="font-size:0.82rem;font-weight:600;color:var(--text)">${m.name || "(no name)"}</span>
+        <span style="font-size:0.72rem;color:var(--muted);font-family:monospace">${m.telegram_id}</span>
+        ${m.role === "owner" ? `<span style="font-size:0.62rem;background:var(--accent);color:var(--accent-text);padding:0.15rem 0.45rem;border-radius:4px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Owner</span>` : `<span style="font-size:0.62rem;background:var(--surface2);color:var(--muted);padding:0.15rem 0.45rem;border-radius:4px;font-weight:600">Member</span>`}
+      </div>
+      ${m.role !== "owner" ? `<button type="button" class="btn btn-sm" style="background:rgba(255,82,82,0.1);color:#ff7070;border:1px solid rgba(255,82,82,0.25);font-size:0.72rem;padding:0.3rem 0.6rem" onclick="removeMember('${m.id}')">Remove</button>` : ""}
+    </div>`).join("");
+
+  return `
+  <div class="card" style="margin-bottom:1rem">
+    <div class="section-title">Members</div>
+    <div class="section-desc">Authorized Telegram users who can interact with the bot. The owner (Your User ID above) is always authorized. Members can chat with the bot but personalization (name, timezone) applies only to the owner.</div>
+    <div id="members-list">
+      ${members.length > 0 ? rows : `<div style="font-size:0.78rem;color:var(--muted);padding:0.65rem 0">No members added yet.</div>`}
+    </div>
+    <div style="margin-top:0.85rem;display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap">
+      <div style="flex:1;min-width:120px">
+        <label style="font-size:0.68rem;color:var(--muted);display:block;margin-bottom:0.3rem">Name</label>
+        <input id="member-name" type="text" placeholder="Alex" style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:0.5rem 0.65rem;color:var(--text);font-size:0.82rem;outline:none" />
+      </div>
+      <div style="flex:1;min-width:120px">
+        <label style="font-size:0.68rem;color:var(--muted);display:block;margin-bottom:0.3rem">Telegram ID</label>
+        <input id="member-tid" type="text" placeholder="123456789" style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:0.5rem 0.65rem;color:var(--text);font-size:0.82rem;outline:none" />
+      </div>
+      <button type="button" class="btn btn-sm" onclick="addMember()" style="white-space:nowrap">Add Member</button>
+    </div>
+    <span id="member-status" style="font-size:0.72rem;color:var(--muted);margin-top:0.4rem;display:block"></span>
+  </div>
+
+  <script>
+  function addMember() {
+    var name = document.getElementById('member-name').value.trim();
+    var tid = document.getElementById('member-tid').value.trim();
+    var status = document.getElementById('member-status');
+    if (!name || !tid) { status.textContent = 'Both name and Telegram ID are required.'; status.style.color = '#ff5252'; return; }
+    if (!/^\\d+$/.test(tid)) { status.textContent = 'Telegram ID must be numeric.'; status.style.color = '#ff5252'; return; }
+    status.textContent = 'Adding...'; status.style.color = 'var(--muted)';
+    fetch('/api/members', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, telegram_id: tid }) })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) { location.reload(); }
+        else { status.textContent = d.error || 'Failed to add member.'; status.style.color = '#ff5252'; }
+      })
+      .catch(function(e) { status.textContent = 'Request failed: ' + e.message; status.style.color = '#ff5252'; });
+  }
+  function removeMember(id) {
+    if (!confirm('Remove this member?')) return;
+    fetch('/api/members/' + id, { method: 'DELETE' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) { location.reload(); }
+        else { alert(d.error || 'Failed to remove member.'); }
+      })
+      .catch(function(e) { alert('Request failed: ' + e.message); });
+  }
+  </script>`;
+}
+
+function renderClaudeAuthSection(current: Record<string, string>): string {
+  const method = current.CLAUDE_AUTH_METHOD || "api_key";
+  const isOAuth = method === "oauth";
+
+  return `
+  <div style="margin-bottom:1rem">
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.85rem">
+      <button type="button" id="auth-tab-api" class="btn btn-sm"
+        style="${!isOAuth ? "background:var(--accent);color:var(--accent-text);border-color:var(--accent)" : "background:transparent;color:var(--muted);border:1px solid var(--border2)"}"
+        onclick="switchAuthMethod('api_key')">
+        API Key
+      </button>
+      <button type="button" id="auth-tab-oauth" class="btn btn-sm"
+        style="${isOAuth ? "background:var(--accent);color:var(--accent-text);border-color:var(--accent)" : "background:transparent;color:var(--muted);border:1px solid var(--border2)"}"
+        onclick="switchAuthMethod('oauth')">
+        Browser Login
+      </button>
+    </div>
+    <input type="hidden" name="CLAUDE_AUTH_METHOD" id="CLAUDE_AUTH_METHOD" value="${method}" />
+
+    <!-- OAuth section -->
+    <div id="oauth-section" style="display:${isOAuth ? "block" : "none"}">
+      <div id="oauth-status" style="font-size:0.82rem;color:var(--muted);padding:0.65rem 0.85rem;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;margin-bottom:0.65rem">
+        Checking authentication status...
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <button type="button" id="oauth-login-btn" class="btn btn-sm" onclick="startClaudeLogin()">
+          Sign in with Browser
+        </button>
+        <button type="button" id="oauth-logout-btn" class="btn btn-sm" style="display:none;background:rgba(255,82,82,0.1);color:#ff7070;border:1px solid rgba(255,82,82,0.25)" onclick="claudeLogout()">
+          Sign Out
+        </button>
+        <span id="oauth-action-status" style="font-size:0.72rem;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- API key section (shown/hidden by the form field below) -->
+    <div id="apikey-section" style="display:${isOAuth ? "none" : "block"}">
+    </div>
+  </div>
+
+  <script>
+  function switchAuthMethod(method) {
+    document.getElementById('CLAUDE_AUTH_METHOD').value = method;
+    var isOAuth = method === 'oauth';
+    document.getElementById('oauth-section').style.display = isOAuth ? 'block' : 'none';
+    document.getElementById('apikey-section').style.display = isOAuth ? 'none' : 'block';
+    // Move the API key field into/out of the apikey-section
+    var akField = document.getElementById('ANTHROPIC_API_KEY');
+    if (akField) akField.closest('.field').style.display = isOAuth ? 'none' : '';
+    // Update tab styles
+    var tabApi = document.getElementById('auth-tab-api');
+    var tabOauth = document.getElementById('auth-tab-oauth');
+    if (isOAuth) {
+      tabOauth.style.background = 'var(--accent)'; tabOauth.style.color = 'var(--accent-text)'; tabOauth.style.borderColor = 'var(--accent)';
+      tabApi.style.background = 'transparent'; tabApi.style.color = 'var(--muted)'; tabApi.style.borderColor = 'var(--border2)';
+    } else {
+      tabApi.style.background = 'var(--accent)'; tabApi.style.color = 'var(--accent-text)'; tabApi.style.borderColor = 'var(--accent)';
+      tabOauth.style.background = 'transparent'; tabOauth.style.color = 'var(--muted)'; tabOauth.style.borderColor = 'var(--border2)';
+    }
+    if (isOAuth) checkClaudeAuth();
+  }
+
+  function checkClaudeAuth() {
+    var el = document.getElementById('oauth-status');
+    el.textContent = 'Checking...';
+    el.style.color = 'var(--muted)';
+    fetch('/api/claude-auth/status')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.loggedIn) {
+          el.innerHTML = '<span style="color:var(--accent);font-weight:600">Authenticated</span> — ' +
+            (d.email || '') + (d.orgName ? ' (' + d.orgName + ')' : '') +
+            (d.subscriptionType ? ' <span style="font-size:0.7rem;color:var(--muted)">[' + d.subscriptionType + ']</span>' : '');
+          document.getElementById('oauth-login-btn').style.display = 'none';
+          document.getElementById('oauth-logout-btn').style.display = '';
+        } else {
+          el.innerHTML = '<span style="color:var(--muted)">Not signed in.</span> Click the button below to authenticate via browser.';
+          document.getElementById('oauth-login-btn').style.display = '';
+          document.getElementById('oauth-logout-btn').style.display = 'none';
+        }
+      })
+      .catch(function(e) {
+        el.textContent = 'Could not check status: ' + e.message;
+        el.style.color = '#ff5252';
+      });
+  }
+
+  function startClaudeLogin() {
+    var btn = document.getElementById('oauth-login-btn');
+    var status = document.getElementById('oauth-action-status');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    status.textContent = '';
+    status.style.color = 'var(--muted)';
+    fetch('/api/claude-auth/login', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.url) {
+          window.open(d.url, '_blank');
+          status.innerHTML = 'A browser tab should have opened. Complete sign-in there, then click below.';
+          status.style.color = 'var(--accent)';
+          btn.textContent = 'Check Status';
+          btn.disabled = false;
+          btn.onclick = function() { checkClaudeAuth(); btn.textContent = 'Sign in with Browser'; btn.onclick = startClaudeLogin; };
+        } else if (d.error) {
+          status.textContent = d.error;
+          status.style.color = '#ff5252';
+          btn.textContent = 'Sign in with Browser';
+          btn.disabled = false;
+        }
+      })
+      .catch(function(e) {
+        status.textContent = 'Request failed: ' + e.message;
+        status.style.color = '#ff5252';
+        btn.textContent = 'Sign in with Browser';
+        btn.disabled = false;
+      });
+  }
+
+  function claudeLogout() {
+    var btn = document.getElementById('oauth-logout-btn');
+    btn.disabled = true;
+    btn.textContent = 'Signing out...';
+    fetch('/api/claude-auth/logout', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        btn.disabled = false;
+        btn.textContent = 'Sign Out';
+        checkClaudeAuth();
+      })
+      .catch(function() {
+        btn.disabled = false;
+        btn.textContent = 'Sign Out';
+        checkClaudeAuth();
+      });
+  }
+
+  // Auto-check on page load if oauth is the selected method
+  if (document.getElementById('CLAUDE_AUTH_METHOD').value === 'oauth') {
+    checkClaudeAuth();
+  }
+  </script>`;
+}
+
 export function renderSettingsForm(
   current: Record<string, string>,
+  members: { id: string; telegram_id: string; name: string; role: string }[],
   toast?: { type: "success" | "error"; text: string }
 ): string {
   const isRailway = !!process.env.RAILWAY_PUBLIC_DOMAIN;
@@ -298,10 +507,14 @@ export function renderSettingsForm(
       </div>`;
     }).join("");
 
+    // Inject Claude auth toggle into the AI group
+    const authExtra = group.title === "AI" ? renderClaudeAuthSection(current) : "";
+
     return `
     <div class="card" style="margin-bottom:1rem;">
       <div class="section-title">${group.title}</div>
       <div class="section-desc">${group.description}</div>
+      ${authExtra}
       ${fieldsHtml}
     </div>`;
   }).join("");
@@ -333,6 +546,7 @@ export function renderSettingsForm(
   return `
   ${toastHtml}
   ${renderThemeSection(current)}
+  ${renderMembersSection(members)}
 
   <!-- ── Danger Zone confirmation modal ─────────────────── -->
   <div id="danger-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center"

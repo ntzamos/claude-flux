@@ -2,25 +2,41 @@ export function renderLoginPage(opts: {
   sent?: boolean;
   error?: string;
   cooldownSecs?: number;
+  hasMembers?: boolean;
+  targetTid?: string;
 }): string {
-  const { sent, error, cooldownSecs } = opts;
+  const { sent, error, cooldownSecs, hasMembers, targetTid } = opts;
 
   const errorHtml = error
     ? '<div class="msg err">' + error + '</div>'
     : "";
 
   const infoHtml = sent && !error
-    ? '<div class="msg ok">✅ OTP sent to your Telegram. Check your messages.</div>'
+    ? '<div class="msg ok">OTP sent to Telegram. Check your messages.</div>'
     : "";
 
   const otpForm = sent ? `
     <form method="POST" action="/api/auth/verify-otp">
+      ${targetTid ? `<input type="hidden" name="telegram_id" value="${targetTid}" />` : ""}
       <label for="otp">6-digit code</label>
       <input id="otp" name="otp" type="text" inputmode="numeric" pattern="[0-9]{6}"
              maxlength="6" placeholder="123456" autocomplete="one-time-code" autofocus required />
       <button class="btn" type="submit">Verify &amp; Sign In</button>
     </form>
     <hr class="divider" />` : "";
+
+  // When there are members, ask for Telegram ID before sending OTP
+  const tidField = hasMembers && !sent
+    ? `<div style="margin-bottom:0.75rem">
+        <label for="telegram_id">Your Telegram ID</label>
+        <input id="telegram_id" name="telegram_id" type="text" inputmode="numeric"
+               placeholder="123456789" value="${targetTid || ""}"
+               style="font-size:1rem;letter-spacing:0.1em" required />
+        <p style="font-size:0.68rem;color:var(--muted);margin-top:0.35rem">If you are a member, the code will be sent to your Telegram.</p>
+       </div>`
+    : (hasMembers && sent && targetTid
+        ? `<input type="hidden" name="telegram_id" value="${targetTid}" />`
+        : "");
 
   const sendBtn = cooldownSecs && cooldownSecs > 0
     ? `<p class="cd-msg">Resend available in <span id="cd">${cooldownSecs}</span>s</p>
@@ -29,6 +45,7 @@ export function renderLoginPage(opts: {
          var iv=setInterval(function(){s--;document.getElementById('cd').textContent=s;if(s<=0){clearInterval(iv);location.reload();}},1000);
        </script>`
     : `<form method="POST" action="/api/auth/request-otp">
+         ${tidField}
          <button class="btn ${sent ? "btn-sm" : ""}" type="submit">
            ${sent ? "Resend OTP" : "Send OTP to Telegram"}
          </button>
@@ -82,7 +99,7 @@ export function renderLoginPage(opts: {
 </head>
 <body>
   <div class="card">
-    <h1>🤖 Claude Flux</h1>
+    <h1>Claude Flux</h1>
     <p class="sub">Confirm it's you — enter the OTP sent to your Telegram to access the dashboard.</p>
     ${errorHtml}
     ${infoHtml}

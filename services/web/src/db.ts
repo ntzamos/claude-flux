@@ -44,5 +44,8 @@ export async function embedContent(
 
 export async function isOnboarded(): Promise<boolean> {
   const settings = await getSettings();
-  return !!(settings.TELEGRAM_BOT_TOKEN && settings.ANTHROPIC_API_KEY);
+  const hasTelegram = !!settings.TELEGRAM_BOT_TOKEN;
+  const hasApiKey = !!settings.ANTHROPIC_API_KEY;
+  const usesOAuth = settings.CLAUDE_AUTH_METHOD === "oauth";
+  return hasTelegram && (hasApiKey || usesOAuth);
 }

@@ -20,15 +20,11 @@ const STEPS = [
   },
   {
     id: "ai",
-    title: "Claude API Key",
-    description: "Your bot uses Claude to think and respond.",
-    instructions: `
-    <ol style="color:var(--muted);font-size:0.84rem;line-height:2;padding-left:1.25rem;">
-      <li>Go to <strong>console.anthropic.com</strong></li>
-      <li>Create an API key and copy it</li>
-    </ol>`,
+    title: "Connect Claude",
+    description: "Your bot uses Claude to think and respond. Choose how to authenticate.",
+    instructions: ``,
     fields: [
-      { key: "ANTHROPIC_API_KEY", label: "Anthropic API Key", type: "password", placeholder: "sk-ant-..." },
+      { key: "ANTHROPIC_API_KEY", label: "Anthropic API Key", type: "password", placeholder: "sk-ant-...", required: false },
     ],
   },
   {
@@ -52,6 +48,37 @@ const STEPS = [
     ],
   },
 ];
+
+function renderOnboardingAuthToggle(existing: Record<string, string>): string {
+  const method = existing.CLAUDE_AUTH_METHOD || "api_key";
+  const isOAuth = method === "oauth";
+
+  return `
+  <div style="margin-top:1rem;margin-bottom:0.5rem">
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.85rem">
+      <button type="button" id="ob-auth-tab-api" class="btn btn-sm"
+        style="${!isOAuth ? "background:var(--accent);color:var(--accent-text);border-color:var(--accent)" : "background:transparent;color:var(--muted);border:1px solid var(--border2)"}"
+        onclick="switchOnboardingAuth('api_key')">
+        API Key
+      </button>
+      <button type="button" id="ob-auth-tab-oauth" class="btn btn-sm"
+        style="${isOAuth ? "background:var(--accent);color:var(--accent-text);border-color:var(--accent)" : "background:transparent;color:var(--muted);border:1px solid var(--border2)"}"
+        onclick="switchOnboardingAuth('oauth')">
+        Browser Login
+      </button>
+    </div>
+    <div id="ob-oauth-section" style="display:${isOAuth ? "block" : "none"};background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:0.85rem;margin-bottom:0.75rem">
+      <div id="ob-oauth-status" style="font-size:0.82rem;color:var(--muted);margin-bottom:0.6rem">Click below to sign in via your browser.</div>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <button type="button" id="ob-oauth-login-btn" class="btn btn-sm" onclick="startOnboardingLogin()">Sign in with Browser</button>
+        <span id="ob-oauth-action" style="font-size:0.72rem;color:var(--muted)"></span>
+      </div>
+    </div>
+    <p style="font-size:0.75rem;color:var(--muted);line-height:1.5;margin-bottom:0.5rem">
+      ${isOAuth ? "Or paste an API key below instead:" : `Go to <strong>console.anthropic.com</strong> to create an API key, or use Browser Login.`}
+    </p>
+  </div>`;
+}
 
 export async function renderOnboarding(stepId?: string, toast?: { type: "success" | "error"; text: string }): Promise<string> {
   const currentStepIndex = STEPS.findIndex(s => s.id === stepId) ?? 0;
@@ -110,10 +137,13 @@ export async function renderOnboarding(stepId?: string, toast?: { type: "success
       <div class="section-title">${step.title}</div>
       <div class="section-desc">${step.description}</div>
       ${step.instructions}
+      ${step.id === "ai" ? renderOnboardingAuthToggle(existing) : ""}
       <form method="POST" action="/api/onboarding-step" style="margin-top:1.25rem;">
         <input type="hidden" name="_step" value="${step.id}" />
         <input type="hidden" name="_next" value="${nextStep?.id ?? "done"}" />
+        ${step.id === "ai" ? `<input type="hidden" name="CLAUDE_AUTH_METHOD" id="CLAUDE_AUTH_METHOD" value="${existing.CLAUDE_AUTH_METHOD || "api_key"}" /><div id="apikey-fields">` : ""}
         ${fieldsHtml}
+        ${step.id === "ai" ? `</div>` : ""}
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;">
           ${step.id === "telegram" ? `
           <div style="display:flex;align-items:center;gap:0.5rem">
@@ -128,6 +158,74 @@ export async function renderOnboarding(stepId?: string, toast?: { type: "success
       </form>
     </div>
   </div>
+  ${step.id === "ai" ? `<script>
+  function switchOnboardingAuth(method) {
+    document.getElementById('CLAUDE_AUTH_METHOD').value = method;
+    var isOAuth = method === 'oauth';
+    document.getElementById('apikey-fields').style.display = isOAuth ? 'none' : '';
+    document.getElementById('ob-oauth-section').style.display = isOAuth ? 'block' : 'none';
+    var tabApi = document.getElementById('ob-auth-tab-api');
+    var tabOauth = document.getElementById('ob-auth-tab-oauth');
+    if (isOAuth) {
+      tabOauth.style.background = 'var(--accent)'; tabOauth.style.color = 'var(--accent-text)'; tabOauth.style.borderColor = 'var(--accent)';
+      tabApi.style.background = 'transparent'; tabApi.style.color = 'var(--muted)'; tabApi.style.borderColor = 'var(--border2)';
+      checkOnboardingAuth();
+    } else {
+      tabApi.style.background = 'var(--accent)'; tabApi.style.color = 'var(--accent-text)'; tabApi.style.borderColor = 'var(--accent)';
+      tabOauth.style.background = 'transparent'; tabOauth.style.color = 'var(--muted)'; tabOauth.style.borderColor = 'var(--border2)';
+    }
+  }
+
+  function checkOnboardingAuth() {
+    var el = document.getElementById('ob-oauth-status');
+    el.textContent = 'Checking...';
+    fetch('/api/claude-auth/status')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.loggedIn) {
+          el.innerHTML = '<span style="color:var(--accent);font-weight:600">Authenticated</span> — ' +
+            (d.email || '') + (d.orgName ? ' (' + d.orgName + ')' : '');
+          document.getElementById('ob-oauth-login-btn').textContent = 'Authenticated';
+          document.getElementById('ob-oauth-login-btn').disabled = true;
+        } else {
+          el.innerHTML = 'Not signed in yet. Click below to authenticate.';
+          document.getElementById('ob-oauth-login-btn').disabled = false;
+          document.getElementById('ob-oauth-login-btn').textContent = 'Sign in with Browser';
+        }
+      })
+      .catch(function(e) { el.textContent = 'Could not check: ' + e.message; });
+  }
+
+  function startOnboardingLogin() {
+    var btn = document.getElementById('ob-oauth-login-btn');
+    var status = document.getElementById('ob-oauth-action');
+    btn.disabled = true; btn.textContent = 'Starting...';
+    status.textContent = '';
+    fetch('/api/claude-auth/login', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.url) {
+          window.open(d.url, '_blank');
+          status.innerHTML = 'Complete sign-in in the browser tab that opened.';
+          status.style.color = 'var(--accent)';
+          btn.textContent = 'Check Status';
+          btn.disabled = false;
+          btn.onclick = function() { checkOnboardingAuth(); };
+        } else {
+          status.textContent = d.error || 'Failed to start login.';
+          status.style.color = '#ff5252';
+          btn.textContent = 'Sign in with Browser';
+          btn.disabled = false;
+        }
+      })
+      .catch(function(e) {
+        status.textContent = 'Request failed: ' + e.message;
+        status.style.color = '#ff5252';
+        btn.textContent = 'Sign in with Browser';
+        btn.disabled = false;
+      });
+  }
+  </script>` : ""}
   ${step.id === "telegram" ? `<script>
   function checkTestBtn() {
     const token  = document.getElementById('TELEGRAM_BOT_TOKEN')?.value.trim();

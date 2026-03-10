@@ -69,12 +69,12 @@ export async function requireAuth(req: Request): Promise<Response | null> {
   return new Response(null, { status: 302, headers: { Location: "/login" } });
 }
 
-export async function sendOtpViaTelegram(code: string): Promise<boolean> {
+export async function sendOtpViaTelegram(code: string, targetUserId?: string): Promise<boolean> {
   const settings = await getSettings();
   const token  = settings.TELEGRAM_BOT_TOKEN?.trim();
-  const userId = settings.TELEGRAM_USER_ID?.trim();
+  const userId = targetUserId?.trim() || settings.TELEGRAM_USER_ID?.trim();
   if (!token || !userId) return false;
-  const text = "🔐 Your Claude Flux login code:\n\n*" + code + "*\n\nExpires in 15 minutes. Do not share it.";
+  const text = "Your Claude Flux login code:\n\n*" + code + "*\n\nExpires in 15 minutes. Do not share it.";
   const res = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

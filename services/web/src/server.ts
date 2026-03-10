@@ -272,12 +272,16 @@ const server = Bun.serve({
       if (isAuthenticated(req) || await isLocalAccess()) return redirect("/dashboard");
       const sent  = url.searchParams.get("sent") === "1";
       const error = url.searchParams.get("error") ?? undefined;
+      const targetTid = url.searchParams.get("tid") ?? undefined;
       let cooldownSecs: number | undefined;
       if (otpState) {
         const rem = Math.ceil((otpState.sentAt + OTP_COOLDOWN - Date.now()) / 1000);
         if (rem > 0) cooldownSecs = rem;
       }
-      return html(renderLoginPage({ sent, error, cooldownSecs }));
+      // Check if there are members besides the owner
+      const memberCount = await sql`SELECT COUNT(*)::int AS count FROM members WHERE role = 'member'`.catch(() => [{ count: 0 }]);
+      const hasMembers = (memberCount[0]?.count ?? 0) > 0;
+      return html(renderLoginPage({ sent, error, cooldownSecs, hasMembers, targetTid }));
     }
 
     // ── Request OTP ──────────────────────────────────────────
@@ -288,14 +292,32 @@ const server = Bun.serve({
         const rem = Math.ceil((otpState.sentAt + OTP_COOLDOWN - Date.now()) / 1000);
         return redirect("/login?sent=1&error=" + encodeURIComponent("Please wait " + rem + "s before requesting a new code."));
       }
+
+      const form = await req.formData();
+      const targetTid = (form.get("telegram_id") as string)?.trim();
+
+      // If a specific telegram_id was provided, verify it's an authorized user
+      if (targetTid) {
+        const settings = await getSettings();
+        const ownerTid = settings.TELEGRAM_USER_ID?.trim();
+        if (targetTid !== ownerTid) {
+          const memberCheck = await sql`SELECT id FROM members WHERE telegram_id = ${targetTid}`.catch(() => []);
+          if (memberCheck.length === 0) {
+            // Don't reveal whether the ID exists — just say code was sent
+            // (silently don't send anything)
+            return redirect("/login?sent=1&tid=" + encodeURIComponent(targetTid));
+          }
+        }
+      }
+
       const code = generateOtp();
       setOtp(code);
-      const ok = await sendOtpViaTelegram(code).catch(() => false);
+      const ok = await sendOtpViaTelegram(code, targetTid || undefined).catch(() => false);
       if (!ok) {
         clearOtp();
         return redirect("/login?error=" + encodeURIComponent("Could not send Telegram message. Check bot token and user ID in Settings."));
       }
-      return redirect("/login?sent=1");
+      return redirect("/login?sent=1" + (targetTid ? "&tid=" + encodeURIComponent(targetTid) : ""));
     }
 
     // ── Verify OTP ───────────────────────────────────────────
@@ -416,6 +438,126 @@ const server = Bun.serve({
       }
       restartRelay(); // fire-and-forget
       return redirect(`/dashboard?tab=settings&toast=success&msg=${encodeURIComponent("Settings saved — relay is restarting.")}`);
+    }
+
+    // ── Members API ──────────────────────────────────────────
+
+    if (pathname === "/api/members" && req.method === "POST") {
+      try {
+        const { name, telegram_id } = (await req.json()) as { name?: string; telegram_id?: string };
+        if (!name?.trim() || !telegram_id?.trim()) {
+          return new Response(JSON.stringify({ error: "Name and Telegram ID are required." }), { status: 400, headers: { "Content-Type": "application/json" } });
+        }
+        if (!/^\d+$/.test(telegram_id.trim())) {
+          return new Response(JSON.stringify({ error: "Telegram ID must be numeric." }), { status: 400, headers: { "Content-Type": "application/json" } });
+        }
+        // Check if this is the owner's ID
+        const settings = await getSettings();
+        const ownerTid = settings.TELEGRAM_USER_ID?.trim();
+        const role = telegram_id.trim() === ownerTid ? "owner" : "member";
+        await sql`
+          INSERT INTO members (telegram_id, name, role)
+          VALUES (${telegram_id.trim()}, ${name.trim()}, ${role})
+          ON CONFLICT (telegram_id) DO UPDATE SET name = EXCLUDED.name
+        `;
+        // Tell relay to reload members without full restart
+        fetch("http://localhost:8080/reload-members", { method: "POST" }).catch(() => {});
+        return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
+    if (pathname.startsWith("/api/members/") && req.method === "DELETE") {
+      try {
+        const id = pathname.split("/api/members/")[1];
+        if (!id) return new Response(JSON.stringify({ error: "Missing ID" }), { status: 400, headers: { "Content-Type": "application/json" } });
+        // Don't allow deleting the owner
+        const rows = await sql`SELECT role FROM members WHERE id = ${id}`;
+        if (rows[0]?.role === "owner") {
+          return new Response(JSON.stringify({ error: "Cannot remove the owner." }), { status: 400, headers: { "Content-Type": "application/json" } });
+        }
+        await sql`DELETE FROM members WHERE id = ${id} AND role != 'owner'`;
+        fetch("http://localhost:8080/reload-members", { method: "POST" }).catch(() => {});
+        return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
+    // ── Claude Auth API ───────────────────────────────────────
+
+    if (pathname === "/api/claude-auth/status" && req.method === "GET") {
+      try {
+        const proc = spawn(["claude", "auth", "status"], { stdout: "pipe", stderr: "pipe" });
+        const stdout = await new Response(proc.stdout).text();
+        await proc.exited;
+        try {
+          const data = JSON.parse(stdout.trim());
+          return new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
+        } catch {
+          return new Response(JSON.stringify({ loggedIn: false }), { headers: { "Content-Type": "application/json" } });
+        }
+      } catch (err: any) {
+        return new Response(JSON.stringify({ loggedIn: false, error: err.message }), { headers: { "Content-Type": "application/json" } });
+      }
+    }
+
+    if (pathname === "/api/claude-auth/login" && req.method === "POST") {
+      try {
+        // Spawn claude auth login and capture the URL from output
+        const proc = spawn(["claude", "auth", "login"], {
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, BROWSER: "echo" }, // prevent opening browser, just print URL
+        });
+
+        // Read output with a timeout — the URL appears quickly
+        let output = "";
+        const reader = proc.stdout.getReader();
+        const decoder = new TextDecoder();
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < 10000) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          output += decoder.decode(value, { stream: true });
+          // Look for URL in output
+          const urlMatch = output.match(/https:\/\/[^\s\n]+/);
+          if (urlMatch) {
+            reader.releaseLock();
+            // Don't kill the process — it needs to stay alive to receive the callback
+            // It will auto-exit after auth completes or times out
+            return new Response(JSON.stringify({ ok: true, url: urlMatch[0] }), {
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+        }
+
+        reader.releaseLock();
+        proc.kill();
+
+        // Check stderr for any errors
+        const stderr = await new Response(proc.stderr).text();
+        return new Response(JSON.stringify({ error: stderr.trim() || "Could not get login URL. The CLI may already be authenticated." }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (pathname === "/api/claude-auth/logout" && req.method === "POST") {
+      try {
+        const proc = spawn(["claude", "auth", "logout"], { stdout: "pipe", stderr: "pipe" });
+        await proc.exited;
+        return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
     }
 
     // ── JSON APIs ────────────────────────────────────────────
