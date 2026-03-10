@@ -8,7 +8,9 @@ import { renderCommands } from "../components/commands.ts";
 import { renderMcp } from "../components/mcp.ts";
 import { renderLists } from "../components/lists.ts";
 import { renderHue } from "../components/hue.ts";
-import { readdir } from "fs/promises";
+import { readdir, readFile } from "fs/promises";
+import { homedir } from "os";
+import { join } from "path";
 import { sql, getSettings } from "../db.ts";
 
 async function renderStatus(): Promise<string> {
@@ -30,6 +32,14 @@ async function renderStatus(): Promise<string> {
   const settings = await getSettings();
   const hasToken       = !!settings.TELEGRAM_BOT_TOKEN;
   const hasAI          = !!settings.ANTHROPIC_API_KEY;
+  const isOAuthMethod  = settings.CLAUDE_AUTH_METHOD === "oauth";
+  let hasOAuthCreds    = false;
+  if (isOAuthMethod) {
+    try {
+      const creds = JSON.parse(await readFile(join(homedir(), ".claude", ".credentials.json"), "utf8"));
+      hasOAuthCreds = !!creds?.claudeAiOauth?.accessToken;
+    } catch {}
+  }
   const hasName        = !!settings.USER_NAME;
   const hasVoiceReply  = !!settings.ELEVENLABS_API_KEY;
   const hasMemory      = !!settings.OPENAI_API_KEY;
@@ -156,7 +166,8 @@ async function renderStatus(): Promise<string> {
         <table style="white-space:nowrap">
           <tbody>
             ${statusRow("Telegram bot token",  hasToken,      hasToken      ? settings.TELEGRAM_BOT_TOKEN.slice(0, 12) + "..." : "go to Settings")}
-            ${statusRow("Anthropic API key",   hasAI,         hasAI         ? "sk-ant-..." : "go to Settings")}
+            ${statusRow("Anthropic API key",   hasAI,         hasAI         ? "sk-ant-..." : isOAuthMethod ? "using browser login" : "go to Settings", hasAI ? "ok" : isOAuthMethod ? "info" : "error")}
+            ${statusRow("Browser login (Claude)", isOAuthMethod, isOAuthMethod ? (hasOAuthCreds ? "authenticated" : "method set but not authenticated") : "not enabled — go to Settings", isOAuthMethod && hasOAuthCreds ? "ok" : isOAuthMethod && !hasOAuthCreds ? "error" : "info")}
             ${statusRow("Voice transcription", hasVoice,      hasVoice      ? whisperModel : "no model found")}
             ${statusRow("Voice replies",       hasVoiceReply, hasVoiceReply ? "ElevenLabs configured" : "optional — go to Settings")}
             ${statusRow("Semantic memory",     hasMemory,     hasMemory     ? "OpenAI embeddings configured" : "optional — go to Settings")}
