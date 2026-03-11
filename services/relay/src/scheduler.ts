@@ -14,8 +14,9 @@ import { sql } from "./db.ts";
 import { loadSettings } from "./config.ts";
 import { Bot } from "grammy";
 import { spawn } from "bun";
-import { readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import { join, dirname } from "path";
+import { homedir } from "os";
 
 const PROJECT_ROOT = dirname(dirname(import.meta.path));
 
@@ -41,6 +42,32 @@ if (!BOT_TOKEN || !CHAT_ID) {
 }
 
 const bot = new Bot(BOT_TOKEN);
+
+const CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+const CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const CREDENTIALS_PATH = join(homedir(), ".claude", ".credentials.json");
+
+async function refreshClaudeTokenIfNeeded(): Promise<void> {
+  try {
+    let credentials: Record<string, any> = {};
+    try { credentials = JSON.parse(await readFile(CREDENTIALS_PATH, "utf8")); } catch { return; }
+    const oauth = credentials.claudeAiOauth;
+    if (!oauth?.refreshToken || !oauth?.expiresAt) return;
+    const expiresAt = new Date(oauth.expiresAt).getTime();
+    if (Date.now() < expiresAt - 10 * 60 * 1000) return;
+    console.log("[scheduler] Token expiring soon, refreshing...");
+    const res = await fetch(CLAUDE_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ grant_type: "refresh_token", refresh_token: oauth.refreshToken, client_id: CLAUDE_CLIENT_ID }),
+    });
+    if (!res.ok) { console.error("[scheduler] Refresh failed:", res.status, await res.text()); return; }
+    const tokens = await res.json() as { access_token: string; refresh_token?: string; expires_in?: number };
+    credentials.claudeAiOauth = { ...oauth, accessToken: tokens.access_token, refreshToken: tokens.refresh_token ?? oauth.refreshToken, expiresAt: new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString() };
+    await writeFile(CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
+    console.log("[scheduler] Token refreshed successfully");
+  } catch (err) { console.error("[scheduler] Refresh error:", err); }
+}
 
 // ============================================================
 // HELPERS
@@ -102,6 +129,7 @@ async function callClaude(prompt: string): Promise<string> {
 // ============================================================
 
 async function main() {
+  await refreshClaudeTokenIfNeeded();
   const now = new Date();
   console.log(`[scheduler] ${now.toISOString()} — checking due tasks`);
 
