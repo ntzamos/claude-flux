@@ -294,6 +294,22 @@ const server = Bun.serve({
         const bodyHtml  = payload.html || payload.data?.html || "";
         const attachments = payload.attachments || payload.data?.attachments || [];
 
+        // Verify the recipient matches our configured email
+        const settings = await getSettings();
+        const configuredEmail = settings.RESEND_FROM_EMAIL?.trim().toLowerCase();
+        if (!configuredEmail) {
+          console.warn("[webhook] RESEND_FROM_EMAIL not configured — ignoring inbound email");
+          return json({ ok: false, error: "inbound email not configured" }, 400);
+        }
+        const toList: string[] = Array.isArray(payload.to) ? payload.to :
+          Array.isArray(payload.data?.to) ? payload.data.to :
+          toEmail ? [toEmail] : [];
+        const matches = toList.some((addr: string) => addr.trim().toLowerCase() === configuredEmail);
+        if (!matches) {
+          console.warn(`[webhook] Ignoring email to ${toList.join(", ")} — does not match ${configuredEmail}`);
+          return json({ ok: false, error: "recipient mismatch" }, 403);
+        }
+
         // Save attachments to /files/ and build metadata
         const savedAttachments: { name: string; path: string; size: number }[] = [];
         for (const att of attachments) {
