@@ -296,7 +296,13 @@ const server = Bun.serve({
 
         // Verify the recipient matches our configured email
         const settings = await getSettings();
-        const configuredEmail = settings.RESEND_FROM_EMAIL?.trim().toLowerCase();
+        const configuredRaw = settings.RESEND_FROM_EMAIL?.trim().toLowerCase() || "";
+        // Extract bare email from "Name <email>" format or plain email
+        const extractEmail = (addr: string): string => {
+          const match = addr.match(/<([^>]+)>/);
+          return (match ? match[1] : addr).trim().toLowerCase();
+        };
+        const configuredEmail = extractEmail(configuredRaw);
         if (!configuredEmail) {
           console.warn("[webhook] RESEND_FROM_EMAIL not configured — ignoring inbound email");
           return json({ ok: false, error: "inbound email not configured" }, 400);
@@ -304,7 +310,7 @@ const server = Bun.serve({
         const toList: string[] = Array.isArray(payload.to) ? payload.to :
           Array.isArray(payload.data?.to) ? payload.data.to :
           toEmail ? [toEmail] : [];
-        const matches = toList.some((addr: string) => addr.trim().toLowerCase() === configuredEmail);
+        const matches = toList.some((addr: string) => extractEmail(addr) === configuredEmail);
         if (!matches) {
           console.warn(`[webhook] Ignoring email to ${toList.join(", ")} — does not match ${configuredEmail}`);
           return json({ ok: false, error: "recipient mismatch" }, 403);
