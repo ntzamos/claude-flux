@@ -22,7 +22,11 @@ export async function loadSettings(): Promise<void> {
       }
     }
 
-    console.log(`[config] Loaded ${loaded} settings from DB.`);
+    // Only log on first load (relay startup), not on every scheduler tick
+    if (!process.env._SETTINGS_LOADED) {
+      console.log(`[config] Loaded ${loaded} settings from DB.`);
+      process.env._SETTINGS_LOADED = "1";
+    }
   } catch (err) {
     console.warn("[config] Settings load failed (non-fatal):", err);
   }

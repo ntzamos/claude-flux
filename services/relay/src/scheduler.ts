@@ -131,7 +131,6 @@ async function callClaude(prompt: string): Promise<string> {
 async function main() {
   await refreshClaudeTokenIfNeeded();
   const now = new Date();
-  console.log(`[scheduler] ${now.toISOString()} — checking due tasks`);
 
   // Update bot short description with current time so it's visible in Telegram
   try {
@@ -159,7 +158,6 @@ async function main() {
   }
 
   if (!tasks || tasks.length === 0) {
-    console.log("[scheduler] No due tasks");
     process.exit(0);
   }
 
