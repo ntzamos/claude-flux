@@ -649,7 +649,6 @@ function contentMenuKeyboard() {
 }
 function toolsMenuKeyboard() {
   return new InlineKeyboard()
-    .text("📱 Grade Device", "menu:device").row()
     .text("🎙 Call Me", "menu:callme").row()
     .text("🌐 Fetch URL", "menu:fetch").row()
     .text("⬅️ Back", "menu:main");
@@ -803,16 +802,7 @@ bot.on("callback_query:data", async (ctx) => {
     } catch (err: any) { await ctx.reply(`Error: ${err.message}`); }
     return;
   }
-  if (data === "menu:device") {
-    await ctx.answerCallbackQuery();
-    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
-    const keyboard = new InlineKeyboard()
-      .text("New Assessment", "device:new").row()
-      .text("Continue Current", "device:continue")
-      .text("Cancel Current", "device:cancel");
-    await ctx.reply("📱 Device Grading\n\nCollect front, back, and frame photos for A/B/C/D defect grading.", { reply_markup: keyboard });
-    return;
-  }
+
   if (data === "menu:callme") {
     await ctx.answerCallbackQuery();
     const agentId = process.env.ELEVENLABS_AGENT_ID;
