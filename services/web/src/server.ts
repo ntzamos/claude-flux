@@ -281,56 +281,92 @@ const server = Bun.serve({
     // ── Resend inbound email webhook ─────────────────────────
     if (pathname === "/api/webhooks/resend" && req.method === "POST") {
       try {
-        const payload = await req.json() as any;
-        // Resend sends different event types; we care about "email.received"
-        // The payload structure: https://resend.com/docs/dashboard/webhooks/introduction
-        // For inbound: { from, to, subject, text, html, attachments }
-        const fromEmail = payload.from || payload.data?.from || "";
-        const fromName  = payload.from_name || payload.data?.from_name || "";
-        const toEmail   = (Array.isArray(payload.to) ? payload.to[0] : payload.to) ||
-                          (Array.isArray(payload.data?.to) ? payload.data.to[0] : payload.data?.to) || "";
-        const subject   = payload.subject || payload.data?.subject || "(no subject)";
-        const bodyText  = payload.text || payload.data?.text || "";
-        const bodyHtml  = payload.html || payload.data?.html || "";
-        const attachments = payload.attachments || payload.data?.attachments || [];
+        const event = await req.json() as any;
 
-        // Verify the recipient matches our configured email
+        // Only handle email.received events
+        if (event.type !== "email.received" || !event.data?.email_id) {
+          return json({ ok: true, skipped: true });
+        }
+
         const settings = await getSettings();
-        const configuredRaw = settings.RESEND_FROM_EMAIL?.trim().toLowerCase() || "";
+        const resendApiKey = settings.RESEND_API_KEY?.trim();
+        if (!resendApiKey) {
+          console.warn("[webhook] RESEND_API_KEY not configured — ignoring inbound email");
+          return json({ ok: false, error: "resend not configured" }, 400);
+        }
+
         // Extract bare email from "Name <email>" format or plain email
         const extractEmail = (addr: string): string => {
           const match = addr.match(/<([^>]+)>/);
           return (match ? match[1] : addr).trim().toLowerCase();
         };
+
+        // Verify the recipient matches our configured email
+        const configuredRaw = settings.RESEND_FROM_EMAIL?.trim().toLowerCase() || "";
         const configuredEmail = extractEmail(configuredRaw);
         if (!configuredEmail) {
           console.warn("[webhook] RESEND_FROM_EMAIL not configured — ignoring inbound email");
           return json({ ok: false, error: "inbound email not configured" }, 400);
         }
-        const toList: string[] = Array.isArray(payload.to) ? payload.to :
-          Array.isArray(payload.data?.to) ? payload.data.to :
-          toEmail ? [toEmail] : [];
+
+        // Fetch full email content from Resend API
+        const resendEmailId = event.data.email_id;
+        const emailRes = await fetch(`https://api.resend.com/emails/receiving/${resendEmailId}`, {
+          headers: { "Authorization": `Bearer ${resendApiKey}` },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!emailRes.ok) {
+          const errText = await emailRes.text();
+          console.error(`[webhook] Failed to fetch email ${resendEmailId}:`, emailRes.status, errText);
+          return json({ ok: false, error: "failed to fetch email" }, 502);
+        }
+        const email = await emailRes.json() as any;
+
+        const fromEmail = email.from || "";
+        const fromName  = email.from_name || "";
+        const toEmail   = Array.isArray(email.to) ? email.to[0] : (email.to || "");
+        const subject   = email.subject || "(no subject)";
+        const bodyText  = email.text || "";
+        const bodyHtml  = email.html || "";
+
+        // Check recipient matches
+        const toList: string[] = Array.isArray(email.to) ? email.to : toEmail ? [toEmail] : [];
         const matches = toList.some((addr: string) => extractEmail(addr) === configuredEmail);
         if (!matches) {
           console.warn(`[webhook] Ignoring email to ${toList.join(", ")} — does not match ${configuredEmail}`);
           return json({ ok: false, error: "recipient mismatch" }, 403);
         }
 
-        // Save attachments to /files/ and build metadata
+        // Fetch attachments from Resend API
         const savedAttachments: { name: string; path: string; size: number }[] = [];
-        for (const att of attachments) {
-          if (att.filename && att.content) {
-            const safeName = `email_${Date.now()}_${att.filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-            const filePath = `/files/${safeName}`;
-            try {
-              const buffer = Buffer.from(att.content, "base64");
-              const { writeFile: wf } = await import("fs/promises");
-              await wf(filePath, buffer);
-              savedAttachments.push({ name: att.filename, path: filePath, size: buffer.length });
-            } catch (e) {
-              console.error("[webhook] Failed to save attachment:", att.filename, e);
+        try {
+          const attRes = await fetch(`https://api.resend.com/emails/receiving/${resendEmailId}/attachments`, {
+            headers: { "Authorization": `Bearer ${resendApiKey}` },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (attRes.ok) {
+            const attData = await attRes.json() as any;
+            const attachments = Array.isArray(attData) ? attData : (attData.data || []);
+            for (const att of attachments) {
+              if (att.filename && att.download_url) {
+                const safeName = `email_${Date.now()}_${att.filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+                const filePath = `/files/${safeName}`;
+                try {
+                  const dlRes = await fetch(att.download_url, { signal: AbortSignal.timeout(30000) });
+                  if (dlRes.ok) {
+                    const buffer = Buffer.from(await dlRes.arrayBuffer());
+                    const { writeFile: wf } = await import("fs/promises");
+                    await wf(filePath, buffer);
+                    savedAttachments.push({ name: att.filename, path: filePath, size: buffer.length });
+                  }
+                } catch (e) {
+                  console.error("[webhook] Failed to download attachment:", att.filename, e);
+                }
+              }
             }
           }
+        } catch (e) {
+          console.error("[webhook] Failed to fetch attachments:", e);
         }
 
         // Store in DB
@@ -339,19 +375,19 @@ const server = Bun.serve({
           VALUES (${fromEmail}, ${fromName}, ${toEmail}, ${subject}, ${bodyText}, ${bodyHtml}, ${JSON.stringify(savedAttachments)})
           RETURNING id
         `;
-        const emailId = rows[0]?.id;
+        const dbEmailId = rows[0]?.id;
 
         // Notify relay via internal HTTP
-        if (emailId) {
+        if (dbEmailId) {
           fetch("http://localhost:8080/inbound-email", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ emailId }),
+            body: JSON.stringify({ emailId: dbEmailId }),
             signal: AbortSignal.timeout(5000),
           }).catch(err => console.error("[webhook] Failed to notify relay:", err));
         }
 
-        return json({ ok: true, id: emailId });
+        return json({ ok: true, id: dbEmailId });
       } catch (err: any) {
         console.error("[webhook] Resend inbound error:", err);
         return json({ error: err.message }, 500);
