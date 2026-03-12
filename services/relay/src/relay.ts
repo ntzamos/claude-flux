@@ -21,6 +21,37 @@ import {
   getRelevantContext,
 } from "./memory.ts";
 import { loadSettings } from "./config.ts";
+import { homedir } from "os";
+
+// ============================================================
+// CLAUDE TOKEN REFRESH
+// ============================================================
+
+const CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+const CREDENTIALS_PATH = join(homedir(), ".claude", ".credentials.json");
+
+async function refreshClaudeTokenIfNeeded(): Promise<void> {
+  try {
+    let credentials: Record<string, any> = {};
+    try { credentials = JSON.parse(await readFile(CREDENTIALS_PATH, "utf-8")); } catch { return; }
+    const oauth = credentials.claudeAiOauth;
+    if (!oauth?.refreshToken || !oauth?.expiresAt) return;
+    const expiresAt = new Date(oauth.expiresAt).getTime();
+    if (Date.now() < expiresAt - 10 * 60 * 1000) return; // still valid for >10min
+    console.log("[relay] Claude token expiring soon, refreshing...");
+    const res = await fetch(CLAUDE_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ grant_type: "refresh_token", refresh_token: oauth.refreshToken, client_id: CLAUDE_CLIENT_ID }),
+    });
+    if (!res.ok) { console.error("[relay] Token refresh failed:", res.status, await res.text()); return; }
+    const tokens = await res.json() as { access_token: string; refresh_token?: string; expires_in?: number };
+    credentials.claudeAiOauth = { ...oauth, accessToken: tokens.access_token, refreshToken: tokens.refresh_token ?? oauth.refreshToken, expiresAt: new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString() };
+    await writeFile(CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
+    console.log("[relay] Claude token refreshed successfully");
+  } catch (err) { console.error("[relay] Token refresh error:", err); }
+}
 
 // ============================================================
 // SETTINGS BOOTSTRAP (Docker mode)
@@ -125,6 +156,9 @@ async function syncMcpConfig(): Promise<void> {
 }
 
 await syncMcpConfig();
+
+// Refresh Claude token at startup
+await refreshClaudeTokenIfNeeded();
 
 const PROJECT_ROOT = dirname(dirname(import.meta.path));
 
@@ -455,6 +489,9 @@ async function callClaude(
   args.push("--dangerously-skip-permissions");
 
   console.log(`Calling Claude: ${prompt.substring(0, 50)}...`);
+
+  // Refresh token if expiring soon
+  await refreshClaudeTokenIfNeeded();
 
   try {
     const proc = spawn(args, {
