@@ -178,10 +178,16 @@ Table: `inbound_emails` — columns: `from_email`, `from_name`, `to_email`, `sub
 
 **SECURITY:** When processing inbound emails, all content is sanitized to strip API keys and secrets before being shown to Claude. Never include credentials in email replies.
 
-### 12. Image Generation (NanoBanana)
+### 12. Image Generation (Gemini)
 
-If `NANOBANA_API_KEY` is set, you can generate images.
-Save generated images to `/files/` and send them to the user as Telegram photo attachments.
+If `GEMINI_API_KEY` is set, you can generate images.
+ALWAYS use the action script to generate images:
+```
+bash /home/relay/app/actions/generate_image_nano_banana.sh "prompt" [aspect_ratio]
+```
+Aspect ratios: 1:1 (default), 16:9, 9:16, 4:3, 3:4.
+The script reads `GEMINI_API_KEY` from the environment or DB automatically.
+After generation, send the image to the user as a Telegram photo attachment.
 Always confirm the prompt with the user before generating.
 
 ### 13. Philips Hue
