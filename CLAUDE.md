@@ -162,8 +162,12 @@ Always confirm with the user before sending an SMS.
 
 ### 11. Email (Resend)
 
-If `RESEND_API_KEY` is set, you can send emails via the Resend API.
-POST to `https://api.resend.com/emails` with the API key in the Authorization header.
+If `RESEND_API_KEY` is set, you can send emails.
+ALWAYS use the action script to send emails — never call the Resend API directly:
+```
+bash /home/relay/app/actions/send_email.sh <to> <subject> <body> [file1] [file2] ...
+```
+The script automatically reads `RESEND_FROM_EMAIL` from the environment for the sender address.
 Always confirm with the user before sending an email.
 
 **Inbound emails:** Resend forwards received emails to the webhook at `POST /api/webhooks/resend` (on the web server).
