@@ -522,7 +522,7 @@ const server = Bun.serve({
 
     // ── Auth guard ───────────────────────────────────────────
     {
-      const PUBLIC = ["/onboarding", "/api/onboarding-step", "/api/test-telegram"];
+      const PUBLIC = ["/onboarding", "/api/onboarding-step", "/api/test-telegram", "/api/webhooks/resend"];
       if (!PUBLIC.includes(pathname)) {
         const authResp = await requireAuth(req);
         if (authResp) {
