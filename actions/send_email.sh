@@ -16,6 +16,14 @@ fi
 API_KEY="${RESEND_API_KEY}"
 FROM="${RESEND_FROM_EMAIL}"
 
+# Fallback: load from DB if env vars are missing
+if [ -z "$API_KEY" ] && [ -n "$DATABASE_URL" ]; then
+  API_KEY=$(psql "$DATABASE_URL" -t -c "SELECT value FROM settings WHERE key='RESEND_API_KEY'" 2>/dev/null | xargs)
+fi
+if [ -z "$FROM" ] && [ -n "$DATABASE_URL" ]; then
+  FROM=$(psql "$DATABASE_URL" -t -c "SELECT value FROM settings WHERE key='RESEND_FROM_EMAIL'" 2>/dev/null | xargs)
+fi
+
 if [ -z "$API_KEY" ] || [ -z "$FROM" ]; then
   echo "Error: RESEND_API_KEY and RESEND_FROM_EMAIL must be set"
   exit 1
