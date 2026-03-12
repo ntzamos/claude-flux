@@ -292,7 +292,7 @@ const server = Bun.serve({
         const resendApiKey = settings.RESEND_API_KEY?.trim();
         if (!resendApiKey) {
           console.warn("[webhook] RESEND_API_KEY not configured — ignoring inbound email");
-          return json({ ok: false, error: "resend not configured" }, 400);
+          return json({ ok: true, skipped: "resend not configured" });
         }
 
         // Extract bare email from "Name <email>" format or plain email
@@ -306,7 +306,7 @@ const server = Bun.serve({
         const configuredEmail = extractEmail(configuredRaw);
         if (!configuredEmail) {
           console.warn("[webhook] RESEND_FROM_EMAIL not configured — ignoring inbound email");
-          return json({ ok: false, error: "inbound email not configured" }, 400);
+          return json({ ok: true, skipped: "inbound email not configured" });
         }
 
         // Fetch full email content from Resend API
@@ -334,7 +334,7 @@ const server = Bun.serve({
         const matches = toList.some((addr: string) => extractEmail(addr) === configuredEmail);
         if (!matches) {
           console.warn(`[webhook] Ignoring email to ${toList.join(", ")} — does not match ${configuredEmail}`);
-          return json({ ok: false, error: "recipient mismatch" }, 403);
+          return json({ ok: true, skipped: "recipient mismatch" });
         }
 
         // Fetch attachments from Resend API
