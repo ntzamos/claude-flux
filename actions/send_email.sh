@@ -47,7 +47,9 @@ const subject = process.env.SUBJECT;
 const body    = process.env.BODY;
 const files   = JSON.parse(process.env.FILES_JSON || '[]');
 
-const payload = { from, to: [to], subject, text: body };
+// Convert plain text to simple HTML with line breaks preserved
+const html = body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>\n');
+const payload = { from, to: [to], subject, text: body, html };
 
 if (files.length > 0) {
   payload.attachments = files.map(f => {
