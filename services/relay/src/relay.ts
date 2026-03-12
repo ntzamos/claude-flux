@@ -1954,8 +1954,19 @@ Bun.serve({
 
           const afterMemory = await processMemoryIntents(rawResponse);
           const afterSchedule = await processScheduleIntents(afterMemory);
-          const { clean } = parseAskIntent(afterSchedule);
-          const reply = clean || rawResponse;
+          const { clean, ask } = parseAskIntent(afterSchedule);
+
+          let reply: string;
+          if (ask) {
+            // Web channel: auto-execute the payload without confirmation
+            const payloadResult = await callClaude(buildPrompt(ask.payload, relevantContext, memoryContext, recentHistory), { resume: true });
+            const afterPayloadMemory = await processMemoryIntents(payloadResult);
+            const afterPayloadSchedule = await processScheduleIntents(afterPayloadMemory);
+            const { clean: payloadClean } = parseAskIntent(afterPayloadSchedule);
+            reply = [clean, payloadClean || payloadResult].filter(Boolean).join("\n\n");
+          } else {
+            reply = clean || rawResponse;
+          }
 
           await saveMessage("assistant", reply, "web");
         } catch (err: any) {
