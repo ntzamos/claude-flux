@@ -170,6 +170,15 @@ bash /home/relay/app/actions/send_email.sh <to> <subject> <body> [file1] [file2]
 The script automatically reads `RESEND_FROM_EMAIL` from the environment for the sender address.
 Always confirm with the user before sending an email.
 
+**Email formatting rules — ALWAYS follow these when composing any outgoing email:**
+- End every email with a sign-off: "Best," or "Best regards," followed by the user's name on the next line.
+- After the sign-off, add a signature block:
+  ```
+  --
+  This message was crafted by Claude Flux — because even AI agents need a good send-off.
+  ```
+- Pick a different short, witty one-liner about AI agents for the signature each time. Keep it light and fun.
+
 **Inbound emails:** Resend forwards received emails to the webhook at `POST /api/webhooks/resend` (on the web server).
 The webhook saves the email (with attachments to `/files/`) into the `inbound_emails` table, then notifies the relay.
 The relay sends a Telegram notification with Reply/Dismiss buttons.
