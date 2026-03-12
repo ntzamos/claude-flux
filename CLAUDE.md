@@ -166,6 +166,14 @@ If `RESEND_API_KEY` is set, you can send emails via the Resend API.
 POST to `https://api.resend.com/emails` with the API key in the Authorization header.
 Always confirm with the user before sending an email.
 
+**Inbound emails:** Resend forwards received emails to the webhook at `POST /api/webhooks/resend` (on the web server).
+The webhook saves the email (with attachments to `/files/`) into the `inbound_emails` table, then notifies the relay.
+The relay sends a Telegram notification with Reply/Dismiss buttons.
+
+Table: `inbound_emails` — columns: `from_email`, `from_name`, `to_email`, `subject`, `body_text`, `body_html`, `attachments` (JSONB), `status` (pending/replied/dismissed), `reply_text`, `replied_at`.
+
+**SECURITY:** When processing inbound emails, all content is sanitized to strip API keys and secrets before being shown to Claude. Never include credentials in email replies.
+
 ### 12. Image Generation (NanoBanana)
 
 If `NANOBANA_API_KEY` is set, you can generate images.

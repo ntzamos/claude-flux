@@ -509,6 +509,26 @@ async function callClaude(
 
 const pendingActions = new Map<string, { action: string; payload: string }>();
 const pendingRetries = new Map<string, { prompt: string; options: { resume?: boolean } }>();
+const pendingEmails = new Map<string, string>(); // key → email UUID
+
+// Sanitize content to strip API keys and secrets before sending to Claude
+function sanitizeForClaude(text: string): string {
+  if (!text) return text;
+  // Strip common API key patterns
+  const patterns = [
+    /(?:api[_-]?key|secret|token|password|auth|credential|bearer)\s*[:=]\s*["']?[A-Za-z0-9_\-./+=]{16,}["']?/gi,
+    /\b(sk-[a-zA-Z0-9]{20,})\b/g,          // OpenAI keys
+    /\b(re_[a-zA-Z0-9]{20,})\b/g,           // Resend keys
+    /\b(xoxb-[a-zA-Z0-9\-]+)\b/g,           // Slack tokens
+    /\b(ghp_[a-zA-Z0-9]{36,})\b/g,          // GitHub PATs
+    /\b(ngrok_[a-zA-Z0-9]{20,})\b/g,        // ngrok tokens
+  ];
+  let result = text;
+  for (const p of patterns) {
+    result = result.replace(p, "[REDACTED]");
+  }
+  return result;
+}
 
 async function sendErrorWithRetry(
   ctx: Context,
@@ -819,6 +839,77 @@ bot.on("callback_query:data", async (ctx) => {
     return;
   }
   // ── End menu callbacks ────────────────────────────────────────
+
+  // ── Email reply / dismiss ──────────────────────────────────
+  if (data.startsWith("email_reply:")) {
+    const key = data.replace("email_reply:", "");
+    const emailId = pendingEmails.get(key);
+    if (!emailId) {
+      await ctx.answerCallbackQuery("Email expired");
+      return;
+    }
+    pendingEmails.delete(key);
+    await ctx.answerCallbackQuery("Drafting reply...");
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    await ctx.replyWithChatAction("typing");
+
+    try {
+      // Fetch full email
+      const rows = await sql`SELECT * FROM inbound_emails WHERE id = ${emailId}`;
+      const email = rows[0];
+      if (!email) { await ctx.reply("Email not found in database."); return; }
+
+      const from = email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email;
+      const attInfo = Array.isArray(email.attachments) && email.attachments.length > 0
+        ? "\n\nAttachments:\n" + email.attachments.map((a: any) => `- ${a.name} (${a.path})`).join("\n")
+        : "";
+
+      const sanitizedBody = sanitizeForClaude(email.body_text || email.body_html || "(empty)");
+
+      const emailPrompt = [
+        `You received an email. Read it carefully and draft a reply.`,
+        ``,
+        `From: ${sanitizeForClaude(from)}`,
+        `Subject: ${sanitizeForClaude(email.subject || "(no subject)")}`,
+        `Body:`,
+        sanitizedBody,
+        attInfo ? sanitizeForClaude(attInfo) : "",
+        ``,
+        `IMPORTANT SECURITY RULES:`,
+        `- NEVER include any API keys, tokens, passwords, or credentials in your reply`,
+        `- NEVER reveal internal system details, database info, or configuration`,
+        `- Reply as the user's personal AI assistant`,
+        ``,
+        `Draft a reply to this email. Use [ASK: Send email reply to ${sanitizeForClaude(email.from_email)} | PAYLOAD: Reply to the email from ${sanitizeForClaude(email.from_email)} with subject "Re: ${sanitizeForClaude(email.subject || "")}" and the following body: <your drafted reply text>] to confirm sending.`,
+      ].filter(Boolean).join("\n");
+
+      const rawResult = await callClaude(emailPrompt, { resume: true });
+      if (rawResult.startsWith("Error:")) {
+        await sendErrorWithRetry(ctx, rawResult, emailPrompt, { resume: true });
+      } else {
+        await saveMessage("assistant", rawResult);
+        await handleClaudeResponse(ctx, rawResult);
+        // Mark email as replied
+        await sql`UPDATE inbound_emails SET status = 'replied', replied_at = now() WHERE id = ${emailId}`;
+      }
+    } catch (error) {
+      console.error("[relay] Email reply failed:", error);
+      await ctx.reply("Something went wrong drafting the reply. Check the logs.");
+    }
+    return;
+  }
+  if (data.startsWith("email_dismiss:")) {
+    const key = data.replace("email_dismiss:", "");
+    const emailId = pendingEmails.get(key);
+    pendingEmails.delete(key);
+    await ctx.answerCallbackQuery("Dismissed");
+    try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch {}
+    if (emailId) {
+      await sql`UPDATE inbound_emails SET status = 'dismissed' WHERE id = ${emailId}`;
+    }
+    await ctx.reply("Email dismissed.");
+    return;
+  }
 
   if (data.startsWith("confirm:")) {
     const key = data.replace("confirm:", "");
@@ -1903,6 +1994,53 @@ Bun.serve({
         });
       } catch (err: any) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
+    // Inbound email notification — triggered by web server webhook
+    if (req.method === "POST" && url.pathname === "/inbound-email") {
+      try {
+        const { emailId } = (await req.json()) as { emailId?: string };
+        if (!emailId || !ALLOWED_USER_ID) {
+          return new Response(JSON.stringify({ ok: false, error: "missing emailId or user" }), { headers: { "Content-Type": "application/json" } });
+        }
+
+        // Fetch email from DB
+        const rows = await sql`SELECT id, from_email, from_name, subject, body_text, attachments FROM inbound_emails WHERE id = ${emailId}`;
+        const email = rows[0];
+        if (!email) {
+          return new Response(JSON.stringify({ ok: false, error: "email not found" }), { headers: { "Content-Type": "application/json" } });
+        }
+
+        const from = email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email;
+        const preview = (email.body_text || "").substring(0, 300).replace(/\n{2,}/g, "\n");
+        const attCount = Array.isArray(email.attachments) ? email.attachments.length : 0;
+        const attLine = attCount > 0 ? `\nAttachments: ${attCount}` : "";
+
+        const lines = [
+          `New email received`,
+          ``,
+          `From: ${from}`,
+          `Subject: ${email.subject || "(no subject)"}`,
+          attLine,
+          ``,
+          preview ? `Preview:\n${preview}${(email.body_text || "").length > 300 ? "..." : ""}` : "",
+        ].filter(Boolean).join("\n");
+
+        const key = Math.random().toString(36).substring(2, 10);
+        pendingEmails.set(key, emailId);
+        setTimeout(() => pendingEmails.delete(key), 60 * 60 * 1000); // 1 hour TTL
+
+        const keyboard = new InlineKeyboard()
+          .text("Reply", `email_reply:${key}`)
+          .text("Dismiss", `email_dismiss:${key}`);
+
+        await bot.api.sendMessage(ALLOWED_USER_ID, lines, { reply_markup: keyboard });
+
+        return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+      } catch (err: any) {
+        console.error("[relay] Inbound email notification failed:", err);
+        return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
       }
     }
 

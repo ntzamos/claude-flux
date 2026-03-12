@@ -18,6 +18,7 @@
  *   POST /api/memory/:id/edit    → update memory item
  *   POST /api/memory/:id/delete  → delete memory item
  *   POST /api/chat               → proxy to relay internal chat API
+ *   POST /api/webhooks/resend    → Resend inbound email webhook
  *   GET  /files/:name            → serve a generated file
  *   POST /api/files/:name/delete → delete a generated file
  *   GET  /health                 → 200 ok
@@ -275,6 +276,64 @@ const server = Bun.serve({
     // ── Health ──────────────────────────────────────────────
     if (pathname === "/health") {
       return new Response("ok");
+    }
+
+    // ── Resend inbound email webhook ─────────────────────────
+    if (pathname === "/api/webhooks/resend" && req.method === "POST") {
+      try {
+        const payload = await req.json() as any;
+        // Resend sends different event types; we care about "email.received"
+        // The payload structure: https://resend.com/docs/dashboard/webhooks/introduction
+        // For inbound: { from, to, subject, text, html, attachments }
+        const fromEmail = payload.from || payload.data?.from || "";
+        const fromName  = payload.from_name || payload.data?.from_name || "";
+        const toEmail   = (Array.isArray(payload.to) ? payload.to[0] : payload.to) ||
+                          (Array.isArray(payload.data?.to) ? payload.data.to[0] : payload.data?.to) || "";
+        const subject   = payload.subject || payload.data?.subject || "(no subject)";
+        const bodyText  = payload.text || payload.data?.text || "";
+        const bodyHtml  = payload.html || payload.data?.html || "";
+        const attachments = payload.attachments || payload.data?.attachments || [];
+
+        // Save attachments to /files/ and build metadata
+        const savedAttachments: { name: string; path: string; size: number }[] = [];
+        for (const att of attachments) {
+          if (att.filename && att.content) {
+            const safeName = `email_${Date.now()}_${att.filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+            const filePath = `/files/${safeName}`;
+            try {
+              const buffer = Buffer.from(att.content, "base64");
+              const { writeFile: wf } = await import("fs/promises");
+              await wf(filePath, buffer);
+              savedAttachments.push({ name: att.filename, path: filePath, size: buffer.length });
+            } catch (e) {
+              console.error("[webhook] Failed to save attachment:", att.filename, e);
+            }
+          }
+        }
+
+        // Store in DB
+        const rows = await sql`
+          INSERT INTO inbound_emails (from_email, from_name, to_email, subject, body_text, body_html, attachments)
+          VALUES (${fromEmail}, ${fromName}, ${toEmail}, ${subject}, ${bodyText}, ${bodyHtml}, ${JSON.stringify(savedAttachments)})
+          RETURNING id
+        `;
+        const emailId = rows[0]?.id;
+
+        // Notify relay via internal HTTP
+        if (emailId) {
+          fetch("http://localhost:8080/inbound-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ emailId }),
+            signal: AbortSignal.timeout(5000),
+          }).catch(err => console.error("[webhook] Failed to notify relay:", err));
+        }
+
+        return json({ ok: true, id: emailId });
+      } catch (err: any) {
+        console.error("[webhook] Resend inbound error:", err);
+        return json({ error: err.message }, 500);
+      }
     }
 
     // ── Landing page ─────────────────────────────────────────
