@@ -162,7 +162,7 @@ export async function renderOnboarding(stepId?: string, toast?: { type: "success
           </div>` : `<span></span>`}
           <div style="display:flex;align-items:center;gap:0.5rem">
             ${skipLink}
-            <button type="submit" class="btn">${isLast ? "Finish" : "Continue →"}</button>
+            <button type="submit" id="submit-btn" class="btn" ${step.id === "telegram" && !(existing.TELEGRAM_BOT_TOKEN && existing.TELEGRAM_USER_ID) ? "disabled" : ""}>${isLast ? "Finish" : "Continue →"}</button>
           </div>
         </div>
       </form>
@@ -273,18 +273,29 @@ export async function renderOnboarding(stepId?: string, toast?: { type: "success
   }
   </script>` : ""}
   ${step.id === "telegram" ? `<script>
+  var testPassed = false;
+
   function checkTestBtn() {
     const token  = document.getElementById('TELEGRAM_BOT_TOKEN')?.value.trim();
     const userId = document.getElementById('TELEGRAM_USER_ID')?.value.trim();
     document.getElementById('test-btn').disabled = !(token && userId);
   }
-  document.getElementById('TELEGRAM_BOT_TOKEN')?.addEventListener('input', checkTestBtn);
-  document.getElementById('TELEGRAM_USER_ID')?.addEventListener('input', checkTestBtn);
+
+  function onInputChange() {
+    testPassed = false;
+    document.getElementById('submit-btn').disabled = true;
+    document.getElementById('test-result').textContent = '';
+    checkTestBtn();
+  }
+
+  document.getElementById('TELEGRAM_BOT_TOKEN')?.addEventListener('input', onInputChange);
+  document.getElementById('TELEGRAM_USER_ID')?.addEventListener('input', onInputChange);
   checkTestBtn();
 
   async function testTelegram() {
     const btn    = document.getElementById('test-btn');
     const result = document.getElementById('test-result');
+    const submitBtn = document.getElementById('submit-btn');
     const token  = document.getElementById('TELEGRAM_BOT_TOKEN')?.value.trim();
     const userId = document.getElementById('TELEGRAM_USER_ID')?.value.trim();
     btn.disabled = true;
@@ -299,18 +310,24 @@ export async function renderOnboarding(stepId?: string, toast?: { type: "success
       });
       const data = await res.json();
       if (data.ok) {
+        testPassed = true;
+        submitBtn.disabled = false;
         result.style.color = 'var(--accent)';
         result.textContent = '✓ Message sent — check Telegram';
       } else {
+        testPassed = false;
+        submitBtn.disabled = true;
         result.style.color = 'var(--red)';
         result.textContent = '✗ ' + (data.error || 'Failed');
       }
     } catch (e) {
+      testPassed = false;
+      submitBtn.disabled = true;
       result.style.color = 'var(--red)';
       result.textContent = '✗ Request failed';
     }
     btn.textContent = 'Test';
-    btn.disabled = false;
+    btn.disabled = !(document.getElementById('TELEGRAM_BOT_TOKEN')?.value.trim() && document.getElementById('TELEGRAM_USER_ID')?.value.trim());
   }
   </script>` : ""}`;
 

@@ -328,8 +328,8 @@ const server = Bun.serve({
 
     // ── Request OTP ──────────────────────────────────────────
     if (pathname === "/api/auth/request-otp" && req.method === "POST") {
-      const onboarded = await isOnboarded().catch(() => false);
-      if (!onboarded) return redirect("/onboarding");
+      const settings = await getSettings();
+      if (!settings.TELEGRAM_BOT_TOKEN) return redirect("/onboarding");
       if (otpState && Date.now() - otpState.sentAt < OTP_COOLDOWN) {
         const rem = Math.ceil((otpState.sentAt + OTP_COOLDOWN - Date.now()) / 1000);
         return redirect("/login?sent=1&error=" + encodeURIComponent("Please wait " + rem + "s before requesting a new code."));
@@ -392,6 +392,13 @@ const server = Bun.serve({
         sendWelcomeMessage(); // fire-and-forget
         return redirect("/dashboard");
       }
+      // If Telegram is already configured, require authentication to protect stored keys
+      {
+        const s = await getSettings();
+        if (s.TELEGRAM_BOT_TOKEN && !(await isAuthenticated(req)) && !(await isLocalAccess())) {
+          return redirect("/login");
+        }
+      }
       const toastType = url.searchParams.get("toast");
       const toastMsg  = url.searchParams.get("msg");
       const toast = toastType && toastMsg
@@ -422,6 +429,13 @@ const server = Bun.serve({
 
     // ── Save onboarding step ─────────────────────────────────
     if (pathname === "/api/onboarding-step" && req.method === "POST") {
+      // If Telegram is already configured, require authentication
+      {
+        const s = await getSettings();
+        if (s.TELEGRAM_BOT_TOKEN && !(await isAuthenticated(req)) && !(await isLocalAccess())) {
+          return redirect("/login");
+        }
+      }
       const form = await req.formData();
       const next = form.get("_next") as string ?? "done";
       const { error } = await upsertSettings(form);
