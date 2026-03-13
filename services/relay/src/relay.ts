@@ -22,6 +22,7 @@ import {
 } from "./memory.ts";
 import { loadSettings } from "./config.ts";
 import { homedir } from "os";
+import { randomBytes, createHash } from "crypto";
 
 // ============================================================
 // CLAUDE TOKEN REFRESH
@@ -51,6 +52,99 @@ async function refreshClaudeTokenIfNeeded(): Promise<void> {
     await writeFile(CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
     console.log("[relay] Claude token refreshed successfully");
   } catch (err) { console.error("[relay] Token refresh error:", err); }
+}
+
+// ============================================================
+// CLAUDE OAUTH LOGIN (Telegram-based)
+// ============================================================
+
+const CLAUDE_AUTH_URL = "https://claude.ai/oauth/authorize";
+const CLAUDE_MANUAL_REDIRECT = "https://platform.claude.com/oauth/code/callback";
+const CLAUDE_SCOPES = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers";
+
+let pendingTelegramOAuth: { codeVerifier: string; state: string } | null = null;
+
+function generatePKCE() {
+  const verifier = randomBytes(32).toString("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  return { verifier, challenge };
+}
+
+function buildAuthUrl(): string {
+  const { verifier, challenge } = generatePKCE();
+  const state = randomBytes(32).toString("base64url");
+  pendingTelegramOAuth = { codeVerifier: verifier, state };
+  // Auto-expire after 10 minutes
+  const ref = pendingTelegramOAuth;
+  setTimeout(() => { if (pendingTelegramOAuth === ref) pendingTelegramOAuth = null; }, 10 * 60 * 1000);
+
+  const authUrl = new URL(CLAUDE_AUTH_URL);
+  authUrl.searchParams.set("code", "true");
+  authUrl.searchParams.set("client_id", CLAUDE_CLIENT_ID);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("redirect_uri", CLAUDE_MANUAL_REDIRECT);
+  authUrl.searchParams.set("scope", CLAUDE_SCOPES);
+  authUrl.searchParams.set("code_challenge", challenge);
+  authUrl.searchParams.set("code_challenge_method", "S256");
+  authUrl.searchParams.set("state", state);
+  return authUrl.toString();
+}
+
+async function exchangeAuthCode(code: string): Promise<{ ok: boolean; error?: string }> {
+  if (!pendingTelegramOAuth) return { ok: false, error: "No pending login. Send /login first." };
+
+  const authCode = code.trim().split("#")[0];
+  try {
+    const tokenRes = await fetch(CLAUDE_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        client_id: CLAUDE_CLIENT_ID,
+        code: authCode,
+        code_verifier: pendingTelegramOAuth.codeVerifier,
+        redirect_uri: CLAUDE_MANUAL_REDIRECT,
+        state: pendingTelegramOAuth.state,
+      }),
+    });
+
+    if (!tokenRes.ok) {
+      const errBody = await tokenRes.text();
+      console.error("[login] Token exchange failed:", tokenRes.status, errBody);
+      return { ok: false, error: "Token exchange failed. The code may be invalid or expired." };
+    }
+
+    const tokens = await tokenRes.json() as {
+      access_token: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+    pendingTelegramOAuth = null;
+
+    // Save to ~/.claude/.credentials.json
+    const credDir = join(homedir(), ".claude");
+    await mkdir(credDir, { recursive: true });
+    let credentials: Record<string, unknown> = {};
+    try { credentials = JSON.parse(await readFile(CREDENTIALS_PATH, "utf-8")); } catch {}
+    credentials.claudeAiOauth = {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token ?? null,
+      expiresAt: new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString(),
+      scopes: CLAUDE_SCOPES.split(" "),
+    };
+    await writeFile(CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
+    console.log("[login] OAuth tokens saved to", CREDENTIALS_PATH);
+
+    // Update settings
+    if (process.env.DATABASE_URL) {
+      await sql`INSERT INTO settings (key, value, updated_at) VALUES ('CLAUDE_AUTH_METHOD', 'oauth', NOW()) ON CONFLICT (key) DO UPDATE SET value = 'oauth', updated_at = NOW()`;
+    }
+
+    return { ok: true };
+  } catch (err: any) {
+    console.error("[login] Code exchange error:", err);
+    return { ok: false, error: err.message };
+  }
 }
 
 // ============================================================
@@ -580,10 +674,20 @@ async function sendErrorWithRetry(
   const key = Math.random().toString(36).substring(2, 10);
   pendingRetries.set(key, { prompt, options: opts });
   setTimeout(() => pendingRetries.delete(key), 10 * 60 * 1000);
-  const keyboard = new InlineKeyboard()
-    .text("Retry", `retry:${key}`)
+
+  // Detect "Not logged in" errors and offer login button
+  const isAuthError = /not logged in|please run.*\/login/i.test(errorMsg);
+  const keyboard = new InlineKeyboard();
+  if (isAuthError) {
+    keyboard.text("🔐 Login", "login:start").row();
+  }
+  keyboard.text("Retry", `retry:${key}`)
     .text("Restart bot", "error:restart");
-  await ctx.reply(`${errorMsg}\n\nWhat would you like to do?`, { reply_markup: keyboard });
+
+  const msg = isAuthError
+    ? "🔐 Not logged in to Claude. Tap Login to authenticate via browser."
+    : `${errorMsg}\n\nWhat would you like to do?`;
+  await ctx.reply(msg, { reply_markup: keyboard });
 }
 
 function parseAskIntent(
@@ -708,6 +812,7 @@ function toolsMenuKeyboard() {
   return new InlineKeyboard()
     .text("🎙 Call Me", "menu:callme").row()
     .text("🌐 Fetch URL", "menu:fetch").row()
+    .text("⚙️ Setup Services", "menu:setup").row()
     .text("⬅️ Back", "menu:main");
 }
 
@@ -875,6 +980,53 @@ bot.on("callback_query:data", async (ctx) => {
     await ctx.reply("🌐 Send /fetch <url> to fetch a webpage and get its content as markdown.\n\nExample: /fetch https://example.com", { reply_markup: new InlineKeyboard().text("⬅️ Tools", "menu:tools").text("🏠 Menu", "menu:main") });
     return;
   }
+  if (data === "menu:setup") {
+    await ctx.answerCallbackQuery();
+    try { await ctx.editMessageText("⚙️ What would you like to set up?\n\n✓ = configured  ○ = not set up", { reply_markup: setupMenuKeyboard() }); }
+    catch { await ctx.reply("⚙️ What would you like to set up?\n\n✓ = configured  ○ = not set up", { reply_markup: setupMenuKeyboard() }); }
+    return;
+  }
+  if (data.startsWith("setup:")) {
+    await ctx.answerCallbackQuery();
+    const serviceId = data.replace("setup:", "");
+    const svc = SETUP_SERVICES.find(s => s.id === serviceId);
+    if (!svc) return;
+
+    // Build a setup prompt and send it through Claude as a normal message
+    const configured = svc.keys.filter(k => !!process.env[k]);
+    const missing = svc.keys.filter(k => !process.env[k]);
+    const statusLine = configured.length > 0
+      ? `Currently configured: ${configured.join(", ")}. Missing: ${missing.join(", ") || "none"}.`
+      : `None of the required keys are configured yet: ${svc.keys.join(", ")}.`;
+
+    const setupPrompt = [
+      `[SYSTEM: The user wants to set up ${svc.label} (${svc.description}).`,
+      statusLine,
+      `Guide them step by step:`,
+      `1. Explain what this service does and what they need`,
+      `2. Tell them where to get API keys/credentials (provide direct URLs)`,
+      `3. Ask them to send each value one at a time`,
+      `4. Once you have a value, save it immediately using: psql "$DATABASE_URL" -c "INSERT INTO settings (key, value, updated_at) VALUES ('KEY_NAME', 'VALUE', NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"`,
+      `5. After all values are saved, tell the user to send /restart to apply changes`,
+      `Keep responses concise and conversational. Do NOT show raw JSON or technical errors.]`,
+    ].join("\n");
+
+    addToBuffer(ctx.chat!.id, ctx, { type: "text", content: setupPrompt, originalMessageId: ctx.callbackQuery.message?.message_id || 0 });
+    return;
+  }
+
+  // ── Login callback ──────────────────────────────────────────
+  if (data === "login:start") {
+    await ctx.answerCallbackQuery("Starting login...");
+    await handleLoginStart(ctx);
+    return;
+  }
+  if (data === "login:paste") {
+    await ctx.answerCallbackQuery();
+    await ctx.reply("📋 Paste the authentication code you received after signing in:");
+    return;
+  }
+
   // ── End menu callbacks ────────────────────────────────────────
 
   // ── Email reply / dismiss ──────────────────────────────────
@@ -1062,6 +1214,8 @@ const BOT_COMMANDS = [
   { command: "update", description: "Pull latest code from git and restart" },
   { command: "tunnel", description: "Enable/disable remote dashboard access (/tunnel on|off|status)" },
   { command: "fetch", description: "Fetch a webpage and return its content as markdown — /fetch <url>" },
+  { command: "setup", description: "Set up integrations via guided chat (ElevenLabs, email, SMS, etc.)" },
+  { command: "login", description: "Sign in to Claude via browser (OAuth)" },
   { command: "newsession", description: "Clear current Claude session and start fresh" },
   { command: "cancel", description: "Cancel the current Claude request" },
 ];
@@ -1389,6 +1543,63 @@ bot.command("callme", async (ctx) => {
 });
 
 // ============================================================
+// /setup command — guided service setup via Claude chat
+// ============================================================
+
+const SETUP_SERVICES = [
+  { id: "elevenlabs_voice", emoji: "🎙", label: "Voice Replies", description: "ElevenLabs text-to-speech for voice replies", keys: ["ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"] },
+  { id: "elevenlabs_callme", emoji: "📞", label: "Phone Calls", description: "ElevenLabs outbound AI phone calls (/callme)", keys: ["ELEVENLABS_API_KEY", "ELEVENLABS_AGENT_ID", "ELEVENLABS_PHONE_NUMBER_ID", "MY_PHONE_NUMBER"] },
+  { id: "openai", emoji: "🧠", label: "Semantic Memory", description: "OpenAI embeddings for smart memory search", keys: ["OPENAI_API_KEY"] },
+  { id: "resend", emoji: "📧", label: "Email", description: "Send and receive emails via Resend", keys: ["RESEND_API_KEY", "RESEND_FROM_EMAIL"] },
+  { id: "twilio", emoji: "💬", label: "SMS", description: "Send SMS via Twilio", keys: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"] },
+  { id: "gemini", emoji: "🎨", label: "Image Generation", description: "Generate images via Google Gemini", keys: ["GEMINI_API_KEY"] },
+  { id: "github", emoji: "🐙", label: "GitHub", description: "Push code changes to GitHub", keys: ["GITHUB_TOKEN", "GITHUB_USERNAME"] },
+  { id: "ngrok", emoji: "🌐", label: "Public URL", description: "Expose dashboard via ngrok tunnel", keys: ["NGROK_AUTH_TOKEN", "NGROK_DOMAIN"] },
+  { id: "hue", emoji: "💡", label: "Philips Hue", description: "Control smart lights", keys: ["HUE_BRIDGE_IP", "HUE_API_KEY"] },
+  { id: "personalize", emoji: "👤", label: "Personalization", description: "Set your name and timezone", keys: ["USER_NAME", "USER_TIMEZONE"] },
+];
+
+function setupMenuKeyboard() {
+  const kb = new InlineKeyboard();
+  for (let i = 0; i < SETUP_SERVICES.length; i++) {
+    const svc = SETUP_SERVICES[i];
+    const configured = svc.keys.every(k => !!process.env[k]);
+    const status = configured ? "✓" : "○";
+    kb.text(`${svc.emoji} ${status} ${svc.label}`, `setup:${svc.id}`);
+    if (i % 2 === 1) kb.row();
+  }
+  if (SETUP_SERVICES.length % 2 === 1) kb.row();
+  kb.text("🏠 Menu", "menu:main");
+  return kb;
+}
+
+bot.command("setup", async (ctx) => {
+  await ctx.reply("⚙️ What would you like to set up?\n\n✓ = configured  ○ = not set up", { reply_markup: setupMenuKeyboard() });
+});
+
+// ============================================================
+// /login command — Claude OAuth login via Telegram
+// ============================================================
+
+async function handleLoginStart(ctx: Context): Promise<void> {
+  const url = buildAuthUrl();
+  const keyboard = new InlineKeyboard()
+    .url("🔐 Sign in with Claude", url).row()
+    .text("📋 I have the code", "login:paste");
+  await ctx.reply(
+    "🔑 *Claude Login*\n\n" +
+    "1\\. Tap the button below to sign in with your browser\n" +
+    "2\\. After signing in, you'll see an authentication code\n" +
+    "3\\. Copy the code and send it here as a message",
+    { parse_mode: "MarkdownV2", reply_markup: keyboard }
+  );
+}
+
+bot.command("login", async (ctx) => {
+  await handleLoginStart(ctx);
+});
+
+// ============================================================
 // /fetch command — fetches URL via jina.ai, saves to /files/, asks Claude to summarize
 // ============================================================
 
@@ -1655,6 +1866,19 @@ async function flushBuffer(chatId: number): Promise<void> {
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text;
   if (text.startsWith("/")) return;
+
+  // Intercept OAuth auth codes when a login is pending
+  if (pendingTelegramOAuth && /^[a-zA-Z0-9_-]{20,}/.test(text.trim())) {
+    const result = await exchangeAuthCode(text.trim());
+    if (result.ok) {
+      await ctx.reply("✅ Logged in successfully! You can now chat with Claude.\n\nSend /restart to apply the changes.");
+      return;
+    } else {
+      await ctx.reply(`❌ Login failed: ${result.error}\n\nSend /login to try again.`);
+      return;
+    }
+  }
+
   console.log(`Message: ${text.substring(0, 50)}...`);
   addToBuffer(ctx.chat!.id, ctx, { type: "text", content: text, originalMessageId: ctx.message.message_id });
 });
